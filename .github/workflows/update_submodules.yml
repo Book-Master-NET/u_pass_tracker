@@ -81,5 +81,5 @@ jobs:
           branch: chore/update-submodules-${{ github.run_number }}
           delete-branch: true
           reviewers: |
-            tu-username-real
-          assignees: tu-username-real
+            remr11
+          assignees: remr11
