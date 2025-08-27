@@ -1,0 +1,6 @@
+[submodule "frontend"]
+	path = frontend
+	url = git@github.com:Book-Master-NET/app_u_pass.git
+[submodule "backend"]
+	path = backend
+	url = git@github.com:Book-Master-NET/api_u_pass.git
