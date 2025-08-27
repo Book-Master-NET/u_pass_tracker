@@ -2,7 +2,7 @@ name: Update Submodules
 
 on:
   schedule:
-    - cron: "*/10 * * * *" # Crono de 10 minutos para ver que ondas
+    - cron: "0 */30 * * *" # Crono de 30 horas en todo lo que vuelvo a tener tiempo de probar xd
   workflow_dispatch:
 
 permissions:
