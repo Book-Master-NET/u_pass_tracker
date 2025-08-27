@@ -2,7 +2,7 @@ name: Update Submodules
 
 on:
   schedule:
-    - cron: "0 */30 * * *" # Crono de 30 horas en todo lo que vuelvo a tener tiempo de probar xd
+    - cron: "0 */5 * * *"   # cada 5 horas
   workflow_dispatch:
 
 permissions:
@@ -17,39 +17,37 @@ jobs:
       - name: Checkout super-repo
         uses: actions/checkout@v4
         with:
-          # Usa el secret de la organización
-          token: ${{ secrets.ORG_SUBMODULE_TOKEN }}
+          # Se sustituirá luego por el token dinámico
           submodules: recursive
           fetch-depth: 0
 
-      - name: Configure Git with organization identity
-        run: |
-          # Usar identidad de la organización o bot
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-          # Configurar acceso a submódulos privados de la org
-          git config --global url."https://${{ secrets.ORG_SUBMODULE_TOKEN }}@github.com/${{ github.repository_owner }}/".insteadOf "https://github.com/${{ github.repository_owner }}/"
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.GITHUB_APP_ID }}
+          private_key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+          installation_id: ${{ secrets.GITHUB_APP_INSTALLATION_ID }}
 
-      - name: Verify repository ownership
+      - name: Re-checkout with App Token
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Configure Git with App identity
         run: |
-          # Verificamos si realmente pertenecemos o somos owner de la organizacion
-          if [[ "${{ github.repository_owner }}" != "Book-Master-NET" ]]; then
-            echo "Error: This workflow should only run on organization repositories"
-            echo "Current owner: ${{ github.repository_owner }}"
-            exit 1
-          fi
-          echo "✅ Running on organization: ${{ github.repository_owner }}"
+          git config user.name "submodule-bot[app]"
+          git config user.email "submodule-bot[app]@users.noreply.github.com"
+          git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/${{ github.repository_owner }}/".insteadOf "https://github.com/${{ github.repository_owner }}/"
 
       - name: Update submodules
         run: |
           set -e
           echo "Current submodules:"
           git submodule status
-          
-          # Actualizar con información detallada
           git submodule update --remote --merge --progress
-          
           echo "Updated submodules:"
           git submodule status
           git status
@@ -59,21 +57,15 @@ jobs:
         run: |
           if [[ -n "$(git status --porcelain)" ]]; then
             echo "changes=true" >> $GITHUB_OUTPUT
-            
-            # Obtener información de los cambios
-            echo "=== Changes detected ===" 
-            git diff --name-only
-            git submodule foreach 'echo "Submodule: $name"; git log --oneline -3 HEAD'
           else
             echo "changes=false" >> $GITHUB_OUTPUT
-            echo "No changes found"
           fi
 
       - name: Create Pull Request instead of direct push
         if: steps.changes.outputs.changes == 'true'
         uses: peter-evans/create-pull-request@v5
         with:
-          token: ${{ secrets.ORG_SUBMODULE_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           commit-message: "chore: update submodules [skip ci]"
           title: "🤖 Auto-update submodules"
           body: |
@@ -84,55 +76,10 @@ jobs:
             - Updates detected at: ${{ github.event.head_commit.timestamp }}
             - Triggered by: ${{ github.event_name }}
             
-            ### Changes
-            See the commits for detailed changes in each submodule.
-            
             ---
-            *This PR was created automatically by the Update Submodules workflow.*
+            *Created automatically by GitHub App bot.*
           branch: chore/update-submodules-${{ github.run_number }}
           delete-branch: true
           reviewers: |
-            REMR11
-            oscarale28
-            DarkKingpro10
-          assignees: REMR11
-
-      - name: Direct push (alternative)
-        if: steps.changes.outputs.changes == 'true' && github.event_name == 'workflow_dispatch'
-        run: |
-          set -e
-          git add .
-          git commit -m "chore: update submodules [skip ci] - manual trigger"
-          
-          # Push con retry
-          max_retries=3
-          retry_count=0
-          
-          while [ $retry_count -lt $max_retries ]; do
-            if git push origin main; then
-              echo "✅ Successfully pushed changes"
-              break
-            else
-              echo "Push failed, attempt $((retry_count + 1))/$max_retries"
-              git pull --rebase origin main
-              retry_count=$((retry_count + 1))
-              
-              if [ $retry_count -eq $max_retries ]; then
-                echo "❌ Failed to push after $max_retries attempts"
-                exit 1
-              fi
-              
-              sleep 2
-            fi
-          done
-
-      - name: Summary
-        if: always()
-        run: |
-          if [[ "${{ steps.changes.outputs.changes }}" == "true" ]]; then
-            echo "✅ Submodules updated successfully"
-            echo "📊 Repository: ${{ github.repository }}"
-            echo "🏢 Organization: ${{ github.repository_owner }}"
-          else
-            echo "ℹ️ No submodule updates needed"
-          fi
+            tu-username-real
+          assignees: tu-username-real
