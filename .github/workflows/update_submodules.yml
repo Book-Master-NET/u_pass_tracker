@@ -25,9 +25,9 @@ jobs:
         id: app-token
         uses: tibdex/github-app-token@v2
         with:
-          app_id: ${{ secrets.GITHUB_APP_ID }}
-          private_key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
-          installation_id: ${{ secrets.GITHUB_APP_INSTALLATION_ID }}
+          app_id: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_ID }}
+          private_key: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_PRIVATE_KEYY }}
+          installation_id: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_INSTALLATION_ID }}
 
       - name: Re-checkout with App Token
         uses: actions/checkout@v4
