@@ -2,24 +2,27 @@ name: Update Submodules
 
 on:
   schedule:
-    - cron: "0 */5 * * *"   # cada 5 horas
+    - cron: "*/10 * * * *"   # cada 10 minutos para testing
   workflow_dispatch:
 
 permissions:
   contents: write
   actions: read
+  pull-requests: write
 
 jobs:
   update-submodules:
     runs-on: ubuntu-latest
     
     steps:
+      # 1. Checkout inicial del super-repo
       - name: Checkout super-repo
         uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 0
 
+      # 2. Generar token de GitHub App
       - name: Generate GitHub App Token
         id: app-token
         uses: tibdex/github-app-token@v2
@@ -29,6 +32,7 @@ jobs:
           installation_retrieval_mode: repository
           installation_retrieval_payload: ${{ github.repository }}
 
+      # 3. Rehacer checkout con el token de la App
       - name: Re-checkout with App Token
         uses: actions/checkout@v4
         with:
@@ -36,32 +40,38 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      # 4. Configurar identidad del bot
       - name: Configure Git with App identity
         run: |
           git config user.name "submodule-bot[app]"
           git config user.email "submodule-bot[app]@users.noreply.github.com"
-          git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/${{ github.repository_owner }}/".insteadOf "https://github.com/${{ github.repository_owner }}/"
+          git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
+      # 5. Actualizar submódulos
       - name: Update submodules
         run: |
-          set -e
-          echo "Current submodules:"
+          echo "=== Submodules before update ==="
           git submodule status
+          echo "=== Running update... ==="
           git submodule update --remote --merge --progress
-          echo "Updated submodules:"
+          echo "=== Submodules after update ==="
           git submodule status
           git status
 
+      # 6. Verificar si hubo cambios
       - name: Check for changes
         id: changes
         run: |
           if [[ -n "$(git status --porcelain)" ]]; then
+            echo "✅ Changes detected"
             echo "changes=true" >> $GITHUB_OUTPUT
           else
+            echo "ℹ️ No changes"
             echo "changes=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create Pull Request instead of direct push
+      # 7. Crear Pull Request si hay cambios
+      - name: Create Pull Request
         if: steps.changes.outputs.changes == 'true'
         uses: peter-evans/create-pull-request@v5
         with:
@@ -71,15 +81,19 @@ jobs:
           body: |
             ## 📦 Submodule Updates
             
-            This PR contains automatic updates to the following submodules:
+            This PR contains automatic updates to the submodules:
             
-            - Updates detected at: ${{ github.event.head_commit.timestamp }}
-            - Triggered by: ${{ github.event_name }}
+            - Run number: ${{ github.run_number }}
+            - Event: ${{ github.event_name }}
             
             ---
             *Created automatically by GitHub App bot.*
           branch: chore/update-submodules-${{ github.run_number }}
           delete-branch: true
-          reviewers: |
-            remr11
+          reviewers: remr11
           assignees: remr11
+
+      # 8. Mensaje cuando no hay cambios
+      - name: No changes found
+        if: steps.changes.outputs.changes == 'false'
+        run: echo "✅ No updates to submodules, nothing to commit."
