@@ -2,7 +2,8 @@ name: Update Submodules
 
 on:
   schedule:
-    - cron: "*/10 * * * *"   # cada 10 minutos para testing
+     - cron: "0 */20 * * *"   # cada 20 horas
+    #- cron: "*/10 * * * *"   # cada 10 minutos para testing
   workflow_dispatch:
 
 permissions:
