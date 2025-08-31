@@ -12,18 +12,17 @@ permissions:
   pull-requests: write
 
 jobs:
-  update-submodules:
+  # Job 1: Limpieza de ramas antiguas
+  cleanup-old-branches:
+    name: 🧹 Clean Old Bot Branches
     runs-on: ubuntu-latest
     
     steps:
-      # 1. Checkout inicial del super-repo
-      - name: Checkout super-repo
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 0
 
-      # 2. Generar token de GitHub App
       - name: Generate GitHub App Token
         id: app-token
         uses: tibdex/github-app-token@v2
@@ -33,7 +32,61 @@ jobs:
           installation_retrieval_mode: repository
           installation_retrieval_payload: ${{ github.repository }}
 
-      # 3. Rehacer checkout con el token de la App
+      - name: Clean old bot branches
+        continue-on-error: true
+        run: |
+          echo "🧹 Cleaning old bot branches..."
+          git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+          
+          # Buscar ramas remotas del bot (más de 24 horas)
+          OLD_BRANCHES=$(git for-each-ref --format='%(refname:short) %(committerdate:unix)' refs/remotes/origin/chore/update-submodules-* | \
+            awk -v cutoff=$(date -d '24 hours ago' +%s) '$2 < cutoff {print $1}' | sed 's/origin\///')
+          
+          if [ -n "$OLD_BRANCHES" ]; then
+            echo "Found old branches (>24h):"
+            echo "$OLD_BRANCHES"
+            
+            echo "BRANCHES_DELETED<<EOF" >> $GITHUB_OUTPUT
+            for branch in $OLD_BRANCHES; do
+              echo "Deleting branch: $branch"
+              if git push origin --delete "$branch" 2>/dev/null; then
+                echo "✅ $branch" >> $GITHUB_OUTPUT
+              else
+                echo "❌ $branch (already deleted or protected)" >> $GITHUB_OUTPUT
+              fi
+            done
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "No old branches found to clean"
+            echo "BRANCHES_DELETED=No branches needed cleanup" >> $GITHUB_OUTPUT
+          fi
+
+  # Job 2: Verificar cambios en submódulos
+  check-submodule-changes:
+    name: 🔍 Check Submodule Updates
+    runs-on: ubuntu-latest
+    needs: cleanup-old-branches
+    outputs:
+      has-changes: ${{ steps.changes.outputs.changes }}
+      submodule-status: ${{ steps.changes.outputs.status }}
+      changes-summary: ${{ steps.changes.outputs.summary }}
+    
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_ID }}
+          private_key: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_PRIVATE_KEY }}
+          installation_retrieval_mode: repository
+          installation_retrieval_payload: ${{ github.repository }}
+
       - name: Re-checkout with App Token
         uses: actions/checkout@v4
         with:
@@ -41,60 +94,248 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      # 4. Configurar identidad del bot
-      - name: Configure Git with App identity
+      - name: Configure Git identity
         run: |
           git config user.name "submodule-bot[app]"
           git config user.email "submodule-bot[app]@users.noreply.github.com"
           git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
-      # 5. Actualizar submódulos
+      - name: Capture current submodule status
+        run: |
+          echo "=== Current Submodule Status ===" > submodule_before.txt
+          git submodule status >> submodule_before.txt
+          cat submodule_before.txt
+
       - name: Update submodules
         run: |
-          echo "=== Submodules before update ==="
-          git submodule status
-          echo "=== Running update... ==="
+          echo "🔄 Updating submodules..."
           git submodule update --remote --merge --progress
-          echo "=== Submodules after update ==="
-          git submodule status
-          git status
+          
+          echo "=== Updated Submodule Status ===" > submodule_after.txt
+          git submodule status >> submodule_after.txt
+          cat submodule_after.txt
 
-      # 6. Verificar si hubo cambios
-      - name: Check for changes
+      - name: Analyze changes and generate summary
         id: changes
         run: |
+          echo "🔍 Analyzing changes..."
+          
           if [[ -n "$(git status --porcelain)" ]]; then
             echo "✅ Changes detected"
             echo "changes=true" >> $GITHUB_OUTPUT
+            echo "status=changes-found" >> $GITHUB_OUTPUT
+            
+            # Generar resumen detallado de cambios
+            SUMMARY=""
+            
+            # Analizar cada submódulo cambiado
+            for submodule in $(git diff --name-only | grep -v submodule_); do
+              if [ -d "$submodule" ]; then
+                cd "$submodule"
+                
+                # Obtener el commit anterior y actual
+                OLD_COMMIT=$(git log --oneline -1 HEAD~1 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+                NEW_COMMIT=$(git log --oneline -1 HEAD 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+                
+                # Obtener logs entre commits si es posible
+                if [ "$OLD_COMMIT" != "unknown" ] && [ "$NEW_COMMIT" != "unknown" ] && [ "$OLD_COMMIT" != "$NEW_COMMIT" ]; then
+                  COMMITS_COUNT=$(git rev-list --count ${OLD_COMMIT}..${NEW_COMMIT} 2>/dev/null || echo "0")
+                  RECENT_COMMITS=$(git log --oneline -5 ${OLD_COMMIT}..${NEW_COMMIT} 2>/dev/null || echo "No commit details available")
+                  
+                  SUMMARY="${SUMMARY}
+            
+            ### 📦 $submodule
+            - **Commits updated**: $COMMITS_COUNT
+            - **From**: \`$OLD_COMMIT\`
+            - **To**: \`$NEW_COMMIT\`
+            
+            **Recent changes**:
+            \`\`\`
+            $RECENT_COMMITS
+            \`\`\`"
+                else
+                  SUMMARY="${SUMMARY}
+            
+            ### 📦 $submodule
+            - **Status**: Updated (commit details not available)"
+                fi
+                
+                cd ..
+              fi
+            done
+            
+            if [ -z "$SUMMARY" ]; then
+              SUMMARY="
+            ### 📦 Submodule Updates
+            - Submodules have been updated to their latest versions
+            - Specific change details are being processed..."
+            fi
+            
+            # Guardar el resumen en el output (escapando caracteres especiales)
+            {
+              echo "summary<<EOF"
+              echo "$SUMMARY"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+            
           else
-            echo "ℹ️ No changes"
+            echo "ℹ️ No changes detected"
             echo "changes=false" >> $GITHUB_OUTPUT
+            echo "status=no-changes" >> $GITHUB_OUTPUT
+            echo "summary=No submodule updates available" >> $GITHUB_OUTPUT
           fi
 
-      # 7. Crear Pull Request si hay cambios
-      - name: Create Pull Request
+      - name: Upload change artifacts
         if: steps.changes.outputs.changes == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: submodule-changes
+          path: |
+            submodule_before.txt
+            submodule_after.txt
+
+  # Job 3: Crear Pull Request con análisis detallado
+  create-pull-request:
+    name: 📋 Create Detailed Pull Request
+    runs-on: ubuntu-latest
+    needs: check-submodule-changes
+    if: needs.check-submodule-changes.outputs.has-changes == 'true'
+    
+    steps:
+      - name: Checkout with token
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_ID }}
+          private_key: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_PRIVATE_KEY }}
+          installation_retrieval_mode: repository
+          installation_retrieval_payload: ${{ github.repository }}
+
+      - name: Re-checkout with App Token and submodules
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "submodule-bot[app]"
+          git config user.email "submodule-bot[app]@users.noreply.github.com"
+          git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Update submodules (reproduce changes)
+        run: git submodule update --remote --merge --progress
+
+      - name: Download change artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: submodule-changes
+          path: ./
+
+      - name: Create Pull Request with detailed analysis
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
           commit-message: "chore: update submodules [skip ci]"
-          title: "🤖 Auto-update submodules"
+          title: "🤖 Auto-update submodules (Run #${{ github.run_number }})"
           body: |
             ## 📦 Submodule Updates
             
-            This PR contains automatic updates to the submodules:
-            
-            - Run number: ${{ github.run_number }}
-            - Event: ${{ github.event_name }}
+            ${{ needs.check-submodule-changes.outputs.changes-summary }}
             
             ---
-            *Created automatically by GitHub App bot.*
+            
+            ## 🔍 Workflow Details
+            - **Run Number**: #${{ github.run_number }}
+            - **Triggered by**: ${{ github.event_name }}
+            - **Timestamp**: ${{ github.event.head_commit.timestamp }}
+            - **Repository**: ${{ github.repository }}
+            
+            ## 📋 Review Checklist
+            - [ ] Verify submodule updates are expected
+            - [ ] Check for any breaking changes
+            - [ ] Ensure CI/CD compatibility
+            
+            ---
+            *🤖 Created automatically by submodule-bot. View [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.*
           branch: chore/update-submodules-${{ github.run_number }}
           delete-branch: true
           reviewers: remr11
           assignees: remr11
 
-      # 8. Mensaje cuando no hay cambios
-      - name: No changes found
-        if: steps.changes.outputs.changes == 'false'
-        run: echo "✅ No updates to submodules, nothing to commit."
+  # Job 4: Reportar estado final
+  report-status:
+    name: 📊 Report Final Status
+    runs-on: ubuntu-latest
+    needs: [cleanup-old-branches, check-submodule-changes, create-pull-request]
+    if: always()
+    
+    steps:
+      - name: Generate status report
+        run: |
+          echo "## 📊 Submodule Update Workflow Report"
+          echo "**Run #${{ github.run_number }}** - $(date)"
+          echo ""
+          
+          echo "### 🧹 Branch Cleanup"
+          echo "Status: ${{ needs.cleanup-old-branches.result }}"
+          
+          echo ""
+          echo "### 🔍 Change Detection" 
+          echo "Status: ${{ needs.check-submodule-changes.result }}"
+          echo "Changes Found: ${{ needs.check-submodule-changes.outputs.has-changes }}"
+          
+          echo ""
+          echo "### 📋 Pull Request Creation"
+          if [ "${{ needs.check-submodule-changes.outputs.has-changes }}" == "true" ]; then
+            echo "Status: ${{ needs.create-pull-request.result }}"
+          else
+            echo "Status: Skipped (no changes)"
+          fi
+          
+          echo ""
+          echo "### 🎯 Overall Result"
+          if [ "${{ needs.create-pull-request.result }}" == "success" ] || [ "${{ needs.check-submodule-changes.outputs.has-changes }}" == "false" ]; then
+            echo "✅ Workflow completed successfully"
+          else
+            echo "❌ Workflow encountered issues"
+          fi
+
+  # Job 5: Limpieza de emergencia (solo en caso de fallo)
+  emergency-cleanup:
+    name: 🚨 Emergency Cleanup
+    runs-on: ubuntu-latest
+    needs: [cleanup-old-branches, check-submodule-changes, create-pull-request]
+    if: failure()
+    
+    steps:
+      - name: Checkout for cleanup
+        uses: actions/checkout@v4
+
+      - name: Generate GitHub App Token for cleanup
+        id: app-token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_ID }}
+          private_key: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_PRIVATE_KEY }}
+          installation_retrieval_mode: repository
+          installation_retrieval_payload: ${{ github.repository }}
+
+      - name: Emergency branch cleanup
+        continue-on-error: true
+        run: |
+          echo "🚨 Performing emergency cleanup due to workflow failure..."
+          git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+          
+          CURRENT_BRANCH="chore/update-submodules-${{ github.run_number }}"
+          
+          echo "Attempting to delete branch: $CURRENT_BRANCH"
+          git push origin --delete "$CURRENT_BRANCH" 2>/dev/null || echo "Branch $CURRENT_BRANCH not found or already deleted"
+          
+          echo "✅ Emergency cleanup completed"
