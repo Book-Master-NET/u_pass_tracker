@@ -96,8 +96,8 @@ jobs:
 
       - name: Configure Git identity
         run: |
-          git config user.name "submodule-bot[app]"
-          git config user.email "submodule-bot[app]@users.noreply.github.com"
+          git config user.name "fqmasterbot[app]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
       - name: Capture current submodule status
@@ -225,8 +225,8 @@ jobs:
 
       - name: Configure Git
         run: |
-          git config user.name "submodule-bot[app]"
-          git config user.email "submodule-bot[app]@users.noreply.github.com"
+          git config user.name "fqmasterbot[app]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
       - name: Update submodules (reproduce changes)
