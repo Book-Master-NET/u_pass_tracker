@@ -1,3 +1,3 @@
 === Current Submodule Status ===
- a4901c9111678eaafd1ddfe95d38a1305910eee8 backend (heads/main)
- 5bb96a484ff2c7ba2db9b8359550ad35b74fa3c2 frontend (heads/main)
+ a4901c9111678eaafd1ddfe95d38a1305910eee8 backend (a4901c9)
+ 5bb96a484ff2c7ba2db9b8359550ad35b74fa3c2 frontend (5bb96a4)
