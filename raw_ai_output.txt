@@ -1,0 +1,1 @@
+❌ AI analysis timed out after 3 minutes. Using fallback documentation.
