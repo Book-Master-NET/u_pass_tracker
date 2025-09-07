@@ -199,12 +199,15 @@ EOF
           # Usar Ollama directamente para análisis MCP
           TIMEOUT=180  # 3 minutos timeout
           
-          {
-            cat mcp_prompt.txt | ollama run llama3 --temperature 0.1 --verbose 2>&1 | 
-            head -c 10000 |  # Limitar tamaño para GitHub Actions
-            sed 's/^/🧠 MCP: /' || 
-            echo "❌ MCP analysis failed or timed out. Using fallback documentation."
-          } > raw_ai_output.txt
+          # Ejecutar Ollama y capturar output de forma segura
+          cat mcp_prompt.txt | timeout 180s ollama run llama3 --temperature 0.1 > raw_ai_output.txt 2>&1 || echo "❌ MCP analysis timed out after 3 minutes. Using fallback documentation." > raw_ai_output.txt
+          
+          # Limitar el tamaño del output para GitHub Actions
+          if [ $(wc -c < raw_ai_output.txt) -gt 10000 ]; then
+            head -c 10000 raw_ai_output.txt > raw_ai_output_trimmed.txt
+            mv raw_ai_output_trimmed.txt raw_ai_output.txt
+            echo "... (output truncated to 10000 characters)" >> raw_ai_output.txt
+          fi
           
           # Procesar la salida para GitHub Actions
           echo "📊 Processing MCP output..."
