@@ -157,32 +157,32 @@ jobs:
           echo "📝 Generating MCP analysis prompt..."
           
           cat > mcp_prompt.txt << 'EOF'
-Eres un ingeniero de software senior especializado en análisis de cambios técnicos. 
-Analiza los siguientes cambios en submódulos de Git y genera documentación técnica profesional.
-
-INSTRUCCIONES ESPECÍFICAS:
-1. Analiza el impacto técnico de los cambios
-2. Identifica posibles breaking changes
-3. Evalúa riesgos de integración
-4. Proporciona recomendaciones específicas
-5. Genera un checklist de verificación técnica
-6. Usa formato Markdown técnico profesional
-7. Incluye secciones claras y concisas
-8. Proporciona evaluaciones de riesgo realistas
-
-CAMBIOS DETECTADOS:
-EOF
+          Eres un ingeniero de software senior especializado en análisis de cambios técnicos. 
+          Analiza los siguientes cambios en submódulos de Git y genera documentación técnica profesional.
           
-          cat detailed_changes.md >> mcp_prompt.txt
+          INSTRUCCIONES ESPECÍFICAS:
+          1. Analiza el impacto técnico de los cambios
+          2. Identifica posibles breaking changes
+          3. Evalúa riesgos de integración
+          4. Proporciona recomendaciones específicas
+          5. Genera un checklist de verificación técnica
+          6. Usa formato Markdown técnico profesional
+          7. Incluye secciones claras y concisas
+          8. Proporciona evaluaciones de riesgo realistas
           
-          echo "" >> mcp_prompt.txt
-          echo "POR FAVOR GENERA:" >> mcp_prompt.txt
-          echo "- Resumen ejecutivo técnico" >> mcp_prompt.txt
-          echo "- Análisis de impacto detallado" >> mcp_prompt.txt  
-          echo "- Evaluación de riesgos con niveles (BAJO/MEDIO/ALTO)" >> mcp_prompt.txt
-          echo "- Recomendaciones técnicas específicas" >> mcp_prompt.txt
-          echo "- Checklist de verificación pre-merge" >> mcp_prompt.txt
-          echo "- Timeline estimado de revisión" >> mcp_prompt.txt
+          CAMBIOS DETECTADOS:
+          EOF
+                    
+                    cat detailed_changes.md >> mcp_prompt.txt
+                    
+                    echo "" >> mcp_prompt.txt
+                    echo "POR FAVOR GENERA:" >> mcp_prompt.txt
+                    echo "- Resumen ejecutivo técnico" >> mcp_prompt.txt
+                    echo "- Análisis de impacto detallado" >> mcp_prompt.txt  
+                    echo "- Evaluación de riesgos con niveles (BAJO/MEDIO/ALTO)" >> mcp_prompt.txt
+                    echo "- Recomendaciones técnicas específicas" >> mcp_prompt.txt
+                    echo "- Checklist de verificación pre-merge" >> mcp_prompt.txt
+                    echo "- Timeline estimado de revisión" >> mcp_prompt.txt
 
       - name: Run Real MCP Analysis with Ollama
         id: mcp-analysis
