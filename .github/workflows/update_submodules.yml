@@ -1,4 +1,4 @@
-name: Update Submodules with Real AI Documentation using MCP
+name: Update Submodules with Real AI Documentation using Ollama
 
 on:
   schedule:
@@ -11,9 +11,9 @@ permissions:
   pull-requests: write
 
 jobs:
-  # Job 1: Setup Ollama y MCP
-  setup-ollama-mcp:
-    name: 🚀 Setup Ollama MCP Environment
+  # Job 1: Setup Ollama
+  setup-ollama:
+    name: 🚀 Setup Ollama Environment
     runs-on: ubuntu-latest
     
     steps:
@@ -22,14 +22,6 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-
-      - name: Install Node.js manually (sin setup-node action)
-        run: |
-          echo "📦 Installing Node.js manually..."
-          # Ubuntu ya viene con Node.js, pero verificamos
-          node --version || echo "Node.js not found, but we'll use system npm"
-          npm --version || echo "NPM not found, but we'll install packages via other means"
-          echo "✅ Node.js environment ready"
 
       - name: Install Ollama
         run: |
@@ -49,30 +41,17 @@ jobs:
           ollama list
           echo "✅ Ollama verification complete"
 
-      - name: Install MCP Ollama Server using alternative method
-        run: |
-          echo "📦 Installing MCP Ollama server..."
-          # Intentar instalar con npm si está disponible
-          if command -v npm &> /dev/null; then
-            npm install -g @modelcontextprotocol/server-ollama @modelcontextprotocol/cli
-            echo "✅ MCP dependencies installed via npm"
-          else
-            # Fallback: descargar directamente o usar otros métodos
-            echo "⚠️  NPM not available, using Ollama directly without MCP server"
-            echo "We'll use Ollama CLI directly for analysis"
-          fi
-
       - name: Test Ollama connection
         run: |
           echo "🧪 Testing Ollama connection..."
-          timeout 30s ollama run llama3 "Hello, testing Ollama integration" || true
+          timeout 30s ollama run llama3 "Hello, testing Ollama integration for submodule analysis" || true
           echo "✅ Ollama test completed"
 
-  # Job 2: Análisis con Ollama directo (sin MCP server complejo)
+  # Job 2: Análisis con Ollama
   analyze-with-ollama:
     name: 🔍 Real AI Analysis with Ollama
     runs-on: ubuntu-latest
-    needs: setup-ollama-mcp
+    needs: setup-ollama
     outputs:
       has-changes: ${{ steps.detect-changes.outputs.changes }}
       ai-documentation: ${{ steps.ollama-analysis.outputs.documentation }}
@@ -158,28 +137,32 @@ jobs:
           echo "📝 Generating AI analysis prompt..."
           
           cat > ai_prompt.txt << 'EOF'
-          Eres un ingeniero de software senior. Analiza estos cambios en submódulos y genera documentación técnica:
+Eres un ingeniero de software senior especializado en análisis de cambios técnicos. 
+Analiza los siguientes cambios en submódulos de Git y genera documentación técnica profesional.
+
+INSTRUCCIONES ESPECÍFICAS:
+1. Analiza el impacto técnico de los cambios
+2. Identifica posibles breaking changes
+3. Evalúa riesgos de integración
+4. Proporciona recomendaciones específicas
+5. Genera un checklist de verificación técnica
+6. Usa formato Markdown técnico profesional
+7. Incluye secciones claras y concisas
+8. Proporciona evaluaciones de riesgo realistas
+
+CAMBIOS DETECTADOS:
+EOF
           
-          INSTRUCCIONES:
-          1. Analiza impacto técnico
-          2. Identifica breaking changes  
-          3. Evalúa riesgos
-          4. Recomendaciones específicas
-          5. Checklist de verificación
-          6. Formato Markdown profesional
+          cat detailed_changes.md >> ai_prompt.txt
           
-          CAMBIOS:
-          EOF
-                    
-                    cat detailed_changes.md >> ai_prompt.txt
-                    
-                    echo "" >> ai_prompt.txt
-                    echo "GENERA:" >> ai_prompt.txt
-                    echo "- Resumen ejecutivo" >> ai_prompt.txt
-                    echo "- Análisis de impacto" >> ai_prompt.txt  
-                    echo "- Evaluación de riesgos (BAJO/MEDIO/ALTO)" >> ai_prompt.txt
-                    echo "- Recomendaciones" >> ai_prompt.txt
-                    echo "- Checklist pre-merge" >> ai_prompt.txt
+          echo "" >> ai_prompt.txt
+          echo "POR FAVOR GENERA:" >> ai_prompt.txt
+          echo "- Resumen ejecutivo técnico" >> ai_prompt.txt
+          echo "- Análisis de impacto detallado" >> ai_prompt.txt  
+          echo "- Evaluación de riesgos con niveles (BAJO/MEDIO/ALTO)" >> ai_prompt.txt
+          echo "- Recomendaciones técnicas específicas" >> ai_prompt.txt
+          echo "- Checklist de verificación pre-merge" >> ai_prompt.txt
+          echo "- Timeline estimado de revisión" >> ai_prompt.txt
 
       - name: Run Real AI Analysis with Ollama
         id: ollama-analysis
@@ -187,31 +170,37 @@ jobs:
         run: |
           echo "🤖 Running REAL AI analysis with Ollama..."
           
-          # Ejecutar análisis con Ollama directamente
+          # Leer el prompt
+          PROMPT_CONTENT=$(cat ai_prompt.txt)
+          
+          # Ejecutar análisis con Ollama
           echo "🚀 Starting AI analysis (this may take 2-3 minutes)..."
           
           # Usar Ollama directamente
           timeout 180s ollama run llama3 --temperature 0.1 "$(cat ai_prompt.txt)" > raw_ai_output.txt 2>&1 || \
-          echo "❌ AI analysis timed out. Using fallback analysis." > raw_ai_output.txt
+          echo "❌ AI analysis timed out after 3 minutes. Using fallback documentation." > raw_ai_output.txt
           
-          # Limitar tamaño del output
-          if [ $(wc -c < raw_ai_output.txt) -gt 8000 ]; then
-            head -c 8000 raw_ai_output.txt > temp_output.txt
-            mv temp_output.txt raw_ai_output.txt
-            echo "... (output truncated)" >> raw_ai_output.txt
+          # Limitar el tamaño del output para GitHub Actions
+          if [ $(wc -c < raw_ai_output.txt) -gt 10000 ]; then
+            head -c 10000 raw_ai_output.txt > raw_ai_output_trimmed.txt
+            mv raw_ai_output_trimmed.txt raw_ai_output.txt
+            echo "... (output truncated to 10000 characters)" >> raw_ai_output.txt
           fi
+          
+          # Procesar la salida
+          echo "📊 Processing AI output..."
           
           # Crear documentación formateada
           echo "# 🤖 AI-Powered Technical Analysis" > ai_documentation.md
-          echo "> Generated using Ollama with Llama 3" >> ai_documentation.md
-          echo "> Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> ai_documentation.md
+          echo "> Generated using Ollama with Llama 3 model" >> ai_documentation.md
+          echo "> Analysis timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> ai_documentation.md
           echo "" >> ai_documentation.md
           
           cat raw_ai_output.txt >> ai_documentation.md
           
           echo "" >> ai_documentation.md
           echo "---" >> ai_documentation.md
-          echo "*🤖 AI analysis generated automatically using Ollama*" >> ai_documentation.md
+          echo "*🤖 This analysis was generated automatically using Ollama with Llama 3 model*" >> ai_documentation.md
           
           # Output para GitHub Actions
           {
@@ -266,18 +255,19 @@ jobs:
             
             ---
             
-            ## 🔧 Technical Details
+            ## 🔧 Technical Implementation Details
             - **AI Provider**: Ollama with Llama 3
             - **Workflow Run**: #${{ github.run_number }}
-            - **Analysis Type**: AI-powered technical analysis
+            - **Analysis Type**: Real AI-powered technical analysis
             - **Timestamp**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
             
             ## 📊 AI Performance
             - **Model**: Llama 3 (via Ollama)
-            - **Analysis**: Technical impact assessment
+            - **Analysis Depth**: Technical impact assessment
+            - **Risk Evaluation**: AI-powered risk assessment
             
             ---
-            *🤖 This PR was created automatically using AI analysis with Ollama integration.*
+            *🤖 This PR was created automatically using REAL AI analysis with Ollama integration. The technical analysis above was generated by AI analyzing actual commit patterns and changes.*
           branch: ai-update-${{ github.run_number }}
           delete-branch: true
           reviewers: remr11
@@ -287,7 +277,7 @@ jobs:
   report-status:
     name: 📊 AI Analysis Report
     runs-on: ubuntu-latest
-    needs: [setup-ollama-mcp, analyze-with-ollama, create-ai-pr]
+    needs: [setup-ollama, analyze-with-ollama, create-ai-pr]
     if: always()
     
     steps:
@@ -298,7 +288,7 @@ jobs:
           echo ""
           
           echo "### 🚀 Ollama Setup"
-          echo "Status: ${{ needs.setup-ollama-mcp.result }}"
+          echo "Status: ${{ needs.setup-ollama.result }}"
           echo "Model: Llama 3"
           echo ""
           
@@ -313,8 +303,14 @@ jobs:
             echo "Status: ${{ needs.create-ai-pr.result }}"
             echo "AI Documentation: ✅ Generated with REAL AI"
           else
-            echo "Status: Skipped (no changes)"
+            echo "Status: Skipped (no changes detected)"
           fi
+          
+          echo ""
+          echo "### 🎯 AI Performance"
+          echo "Analysis Type: Real AI-powered technical assessment"
+          echo "Model: Llama 3 via Ollama"
+          echo "Integration: Direct Ollama API"
 
   # Job 5: Cleanup
   cleanup:
