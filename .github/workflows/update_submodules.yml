@@ -23,6 +23,15 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_ID }}
+          private_key: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_PRIVATE_KEY }}
+          installation_retrieval_mode: repository
+          installation_retrieval_payload: ${{ github.repository }}
+
       - name: Install Ollama
         run: |
           echo "📦 Installing Ollama..."
@@ -41,6 +50,12 @@ jobs:
           ollama list
           echo "✅ Ollama verification complete"
 
+      - name: Configure Git with App Token
+        run: |
+          git config user.name "fqmasterbot[app]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+
   # Job 2: Análisis con Ollama
   analyze-with-ollama:
     name: 🔍 Real AI Analysis with Ollama
@@ -51,17 +66,27 @@ jobs:
       ai-documentation: ${{ steps.ollama-analysis.outputs.documentation }}
     
     steps:
-      - name: Checkout with submodules
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_ID }}
+          private_key: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_PRIVATE_KEY }}
+          installation_retrieval_mode: repository
+          installation_retrieval_payload: ${{ github.repository }}
+
+      - name: Checkout with submodules (using App Token)
         uses: actions/checkout@v4
         with:
+          token: ${{ steps.app-token.outputs.token }}
           submodules: recursive
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure Git identity
         run: |
-          git config user.name "github-actions[bot]"
+          git config user.name "fqmasterbot[app]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
       - name: Update submodules and detect changes
         id: detect-changes
@@ -122,32 +147,32 @@ jobs:
           echo "📝 Generating AI analysis prompt..."
           
           cat > ai_prompt.txt << 'EOF'
-          Eres un ingeniero de software senior especializado en análisis de cambios técnicos. 
-          Analiza los siguientes cambios en submódulos de Git y genera documentación técnica profesional.
+Eres un ingeniero de software senior especializado en análisis de cambios técnicos. 
+Analiza los siguientes cambios en submódulos de Git y genera documentación técnica profesional.
+
+INSTRUCCIONES ESPECÍFICAS:
+1. Analiza el impacto técnico de los cambios
+2. Identifica posibles breaking changes
+3. Evalúa riesgos de integración
+4. Proporciona recomendaciones específicas
+5. Genera un checklist de verificación técnica
+6. Usa formato Markdown técnico profesional
+7. Incluye secciones claras y concisas
+8. Proporciona evaluaciones de riesgo realistas
+
+CAMBIOS DETECTADOS:
+EOF
           
-          INSTRUCCIONES ESPECÍFICAS:
-          1. Analiza el impacto técnico de los cambios
-          2. Identifica posibles breaking changes
-          3. Evalúa riesgos de integración
-          4. Proporciona recomendaciones específicas
-          5. Genera un checklist de verificación técnica
-          6. Usa formato Markdown técnico profesional
-          7. Incluye secciones claras y concisas
-          8. Proporciona evaluaciones de riesgo realistas
+          cat detailed_changes.md >> ai_prompt.txt
           
-          CAMBIOS DETECTADOS:
-          EOF
-                    
-                    cat detailed_changes.md >> ai_prompt.txt
-                    
-                    echo "" >> ai_prompt.txt
-                    echo "POR FAVOR GENERA:" >> ai_prompt.txt
-                    echo "- Resumen ejecutivo técnico" >> ai_prompt.txt
-                    echo "- Análisis de impacto detallado" >> ai_prompt.txt  
-                    echo "- Evaluación de riesgos con niveles (BAJO/MEDIO/ALTO)" >> ai_prompt.txt
-                    echo "- Recomendaciones técnicas específicas" >> ai_prompt.txt
-                    echo "- Checklist de verificación pre-merge" >> ai_prompt.txt
-                    echo "- Timeline estimado de revisión" >> ai_prompt.txt
+          echo "" >> ai_prompt.txt
+          echo "POR FAVOR GENERA:" >> ai_prompt.txt
+          echo "- Resumen ejecutivo técnico" >> ai_prompt.txt
+          echo "- Análisis de impacto detallado" >> ai_prompt.txt  
+          echo "- Evaluación de riesgos con niveles (BAJO/MEDIO/ALTO)" >> ai_prompt.txt
+          echo "- Recomendaciones técnicas específicas" >> ai_prompt.txt
+          echo "- Checklist de verificación pre-merge" >> ai_prompt.txt
+          echo "- Timeline estimado de revisión" >> ai_prompt.txt
 
       - name: Run Real AI Analysis with Ollama
         id: ollama-analysis
@@ -202,7 +227,7 @@ jobs:
             submodule_before.txt
             submodule_after.txt
 
-  # Job 3: Crear Pull Request con análisis AI (SOLO SI HAY CAMBIOS)
+  # Job 3: Crear Pull Request con análisis AI
   create-ai-pr:
     name: 📋 Create AI-Powered Pull Request
     runs-on: ubuntu-latest
@@ -210,12 +235,27 @@ jobs:
     if: needs.analyze-with-ollama.outputs.has-changes == 'true'
     
     steps:
-      - name: Checkout repository
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_ID }}
+          private_key: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_PRIVATE_KEY }}
+          installation_retrieval_mode: repository
+          installation_retrieval_payload: ${{ github.repository }}
+
+      - name: Checkout repository (using App Token)
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           submodules: recursive
           fetch-depth: 0
+
+      - name: Configure Git for PR creation
+        run: |
+          git config user.name "fqmasterbot[app]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
       - name: Download analysis artifacts
         uses: actions/download-artifact@v4
@@ -223,10 +263,10 @@ jobs:
           name: ai-analysis-artifacts
           path: ./
 
-      - name: Create Pull Request with AI Analysis
+      - name: Create Pull Request with AI Analysis (using App Token)
         uses: peter-evans/create-pull-request@v5
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           commit-message: "chore: update submodules with AI analysis [skip ci]"
           title: "🤖 AI-Analyzed Submodule Updates (Run #${{ github.run_number }})"
           body: |
@@ -234,25 +274,29 @@ jobs:
             
             ---
             
-            ## 🔧 Technical Details
+            ## 🔧 Technical Implementation Details
             - **AI Provider**: Ollama with Llama 3
             - **Workflow Run**: #${{ github.run_number }}
             - **Analysis Type**: Real AI-powered technical analysis
+            - **Timestamp**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
             
-            ## 📊 Analysis Summary
+            ## 📊 AI Performance
             - **Model**: Llama 3 (via Ollama)
-            - **Integration**: Direct AI analysis of commit patterns
+            - **Analysis Depth**: Technical impact assessment
+            - **Risk Evaluation**: AI-powered risk assessment
             
             ---
-            *🤖 This analysis was generated automatically using Ollama AI integration.*
+            *🤖 This PR was created automatically using REAL AI analysis with Ollama integration. The technical analysis above was generated by AI analyzing actual commit patterns and changes.*
           branch: ai-update-${{ github.run_number }}
           delete-branch: true
+          reviewers: remr11
+          assignees: remr11
 
   # Job 4: Status report
   report-status:
     name: 📊 AI Analysis Report
     runs-on: ubuntu-latest
-    needs: [setup-ollama, analyze-with-ollama]
+    needs: [setup-ollama, analyze-with-ollama, create-ai-pr]
     if: always()
     
     steps:
@@ -273,13 +317,19 @@ jobs:
           echo "AI Used: ✅ Real Ollama Integration"
           echo ""
           
+          echo "### 📋 Pull Request"
           if [ "${{ needs.analyze-with-ollama.outputs.has-changes }}" == "true" ]; then
-            echo "### 📋 Pull Request"
-            echo "PR Creation: Attempted (check repository settings for permissions)"
+            echo "Status: ${{ needs.create-ai-pr.result }}"
+            echo "AI Documentation: ✅ Generated with REAL AI"
+            echo "Authentication: ✅ Using GitHub App Token"
           else
-            echo "### 📋 Pull Request"
             echo "Status: Skipped (no changes detected)"
           fi
+          
+          echo ""
+          echo "### 🎯 Authentication Method"
+          echo "Method: GitHub App Token"
+          echo "App ID: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_ID }}"
 
   # Job 5: Cleanup
   cleanup:
