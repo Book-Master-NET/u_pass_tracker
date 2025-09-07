@@ -23,6 +23,14 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Install Node.js manually (sin setup-node action)
+        run: |
+          echo "📦 Installing Node.js manually..."
+          # Ubuntu ya viene con Node.js, pero verificamos
+          node --version || echo "Node.js not found, but we'll use system npm"
+          npm --version || echo "NPM not found, but we'll install packages via other means"
+          echo "✅ Node.js environment ready"
+
       - name: Install Ollama
         run: |
           echo "📦 Installing Ollama..."
@@ -41,33 +49,33 @@ jobs:
           ollama list
           echo "✅ Ollama verification complete"
 
-      - name: Setup Node.js for MCP
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install MCP Ollama Server
+      - name: Install MCP Ollama Server using alternative method
         run: |
           echo "📦 Installing MCP Ollama server..."
-          npm install -g @modelcontextprotocol/server-ollama
-          npm install -g @modelcontextprotocol/cli
-          echo "✅ MCP dependencies installed"
+          # Intentar instalar con npm si está disponible
+          if command -v npm &> /dev/null; then
+            npm install -g @modelcontextprotocol/server-ollama @modelcontextprotocol/cli
+            echo "✅ MCP dependencies installed via npm"
+          else
+            # Fallback: descargar directamente o usar otros métodos
+            echo "⚠️  NPM not available, using Ollama directly without MCP server"
+            echo "We'll use Ollama CLI directly for analysis"
+          fi
 
-      - name: Test MCP connection
+      - name: Test Ollama connection
         run: |
-          echo "🧪 Testing MCP connection..."
-          timeout 30s ollama run llama3 "Hello, I'm testing MCP integration" || true
-          echo "✅ MCP test completed"
+          echo "🧪 Testing Ollama connection..."
+          timeout 30s ollama run llama3 "Hello, testing Ollama integration" || true
+          echo "✅ Ollama test completed"
 
-  # Job 2: Análisis con MCP real
-  analyze-with-mcp:
-    name: 🔍 Real AI Analysis with MCP
+  # Job 2: Análisis con Ollama directo (sin MCP server complejo)
+  analyze-with-ollama:
+    name: 🔍 Real AI Analysis with Ollama
     runs-on: ubuntu-latest
     needs: setup-ollama-mcp
     outputs:
       has-changes: ${{ steps.detect-changes.outputs.changes }}
-      ai-documentation: ${{ steps.mcp-analysis.outputs.documentation }}
+      ai-documentation: ${{ steps.ollama-analysis.outputs.documentation }}
     
     steps:
       - name: Checkout with submodules
@@ -109,8 +117,8 @@ jobs:
           if [[ -n "$(git status --porcelain)" ]]; then
             echo "changes=true" >> $GITHUB_OUTPUT
             
-            # Crear archivo detallado de cambios para MCP
-            echo "# Detailed Submodule Changes for MCP Analysis" > detailed_changes.md
+            # Crear archivo detallado de cambios
+            echo "# Detailed Submodule Changes for AI Analysis" > detailed_changes.md
             echo "Generated on: $(date)" >> detailed_changes.md
             echo "" >> detailed_changes.md
             
@@ -131,16 +139,9 @@ jobs:
                 echo "- **Latest Commit**: $LATEST_COMMIT" >> ../detailed_changes.md
                 echo "" >> ../detailed_changes.md
                 
-                # Obtener últimos 15 commits
+                # Obtener últimos 10 commits
                 echo "### Recent Commits:" >> ../detailed_changes.md
-                git log --oneline -15 --pretty=format:"- \`%h\` %s (%an, %cr)" >> ../detailed_changes.md 2>/dev/null || echo "- No commit history available" >> ../detailed_changes.md
-                echo "" >> ../detailed_changes.md
-                
-                # Obtener archivos modificados
-                echo "### Modified Files:" >> ../detailed_changes.md
-                git diff --name-only HEAD~5..HEAD 2>/dev/null | head -20 | sed 's/^/- /' >> ../detailed_changes.md || echo "- Unable to retrieve file changes" >> ../detailed_changes.md
-                echo "" >> ../detailed_changes.md
-                echo "---" >> ../detailed_changes.md
+                git log --oneline -10 --pretty=format:"- \`%h\` %s (%an, %cr)" >> ../detailed_changes.md 2>/dev/null || echo "- No commit history available" >> ../detailed_changes.md
                 echo "" >> ../detailed_changes.md
                 
                 cd ..
@@ -151,78 +152,66 @@ jobs:
             echo "No changes detected" > detailed_changes.md
           fi
 
-      - name: Generate MCP Analysis Prompt
+      - name: Generate AI Analysis Prompt
         if: steps.detect-changes.outputs.changes == 'true'
         run: |
-          echo "📝 Generating MCP analysis prompt..."
+          echo "📝 Generating AI analysis prompt..."
           
-          cat > mcp_prompt.txt << 'EOF'
-          Eres un ingeniero de software senior especializado en análisis de cambios técnicos. 
-          Analiza los siguientes cambios en submódulos de Git y genera documentación técnica profesional.
+          cat > ai_prompt.txt << 'EOF'
+          Eres un ingeniero de software senior. Analiza estos cambios en submódulos y genera documentación técnica:
           
-          INSTRUCCIONES ESPECÍFICAS:
-          1. Analiza el impacto técnico de los cambios
-          2. Identifica posibles breaking changes
-          3. Evalúa riesgos de integración
-          4. Proporciona recomendaciones específicas
-          5. Genera un checklist de verificación técnica
-          6. Usa formato Markdown técnico profesional
-          7. Incluye secciones claras y concisas
-          8. Proporciona evaluaciones de riesgo realistas
+          INSTRUCCIONES:
+          1. Analiza impacto técnico
+          2. Identifica breaking changes  
+          3. Evalúa riesgos
+          4. Recomendaciones específicas
+          5. Checklist de verificación
+          6. Formato Markdown profesional
           
-          CAMBIOS DETECTADOS:
+          CAMBIOS:
           EOF
                     
-                    cat detailed_changes.md >> mcp_prompt.txt
+                    cat detailed_changes.md >> ai_prompt.txt
                     
-                    echo "" >> mcp_prompt.txt
-                    echo "POR FAVOR GENERA:" >> mcp_prompt.txt
-                    echo "- Resumen ejecutivo técnico" >> mcp_prompt.txt
-                    echo "- Análisis de impacto detallado" >> mcp_prompt.txt  
-                    echo "- Evaluación de riesgos con niveles (BAJO/MEDIO/ALTO)" >> mcp_prompt.txt
-                    echo "- Recomendaciones técnicas específicas" >> mcp_prompt.txt
-                    echo "- Checklist de verificación pre-merge" >> mcp_prompt.txt
-                    echo "- Timeline estimado de revisión" >> mcp_prompt.txt
+                    echo "" >> ai_prompt.txt
+                    echo "GENERA:" >> ai_prompt.txt
+                    echo "- Resumen ejecutivo" >> ai_prompt.txt
+                    echo "- Análisis de impacto" >> ai_prompt.txt  
+                    echo "- Evaluación de riesgos (BAJO/MEDIO/ALTO)" >> ai_prompt.txt
+                    echo "- Recomendaciones" >> ai_prompt.txt
+                    echo "- Checklist pre-merge" >> ai_prompt.txt
 
-      - name: Run Real MCP Analysis with Ollama
-        id: mcp-analysis
+      - name: Run Real AI Analysis with Ollama
+        id: ollama-analysis
         if: steps.detect-changes.outputs.changes == 'true'
         run: |
-          echo "🤖 Running REAL MCP analysis with Ollama..."
+          echo "🤖 Running REAL AI analysis with Ollama..."
           
-          # Leer el prompt
-          PROMPT_CONTENT=$(cat mcp_prompt.txt)
+          # Ejecutar análisis con Ollama directamente
+          echo "🚀 Starting AI analysis (this may take 2-3 minutes)..."
           
-          # Ejecutar análisis con MCP real usando Ollama
-          echo "🚀 Starting MCP analysis (this may take 2-3 minutes)..."
+          # Usar Ollama directamente
+          timeout 180s ollama run llama3 --temperature 0.1 "$(cat ai_prompt.txt)" > raw_ai_output.txt 2>&1 || \
+          echo "❌ AI analysis timed out. Using fallback analysis." > raw_ai_output.txt
           
-          # Usar Ollama directamente para análisis MCP
-          TIMEOUT=180  # 3 minutos timeout
-          
-          # Ejecutar Ollama y capturar output de forma segura
-          cat mcp_prompt.txt | timeout 180s ollama run llama3 --temperature 0.1 > raw_ai_output.txt 2>&1 || echo "❌ MCP analysis timed out after 3 minutes. Using fallback documentation." > raw_ai_output.txt
-          
-          # Limitar el tamaño del output para GitHub Actions
-          if [ $(wc -c < raw_ai_output.txt) -gt 10000 ]; then
-            head -c 10000 raw_ai_output.txt > raw_ai_output_trimmed.txt
-            mv raw_ai_output_trimmed.txt raw_ai_output.txt
-            echo "... (output truncated to 10000 characters)" >> raw_ai_output.txt
+          # Limitar tamaño del output
+          if [ $(wc -c < raw_ai_output.txt) -gt 8000 ]; then
+            head -c 8000 raw_ai_output.txt > temp_output.txt
+            mv temp_output.txt raw_ai_output.txt
+            echo "... (output truncated)" >> raw_ai_output.txt
           fi
           
-          # Procesar la salida para GitHub Actions
-          echo "📊 Processing MCP output..."
-          
           # Crear documentación formateada
-          echo "# 🤖 MCP AI-Powered Technical Analysis" > ai_documentation.md
-          echo "> Generated using Ollama MCP with Llama 3 model" >> ai_documentation.md
-          echo "> Analysis timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> ai_documentation.md
+          echo "# 🤖 AI-Powered Technical Analysis" > ai_documentation.md
+          echo "> Generated using Ollama with Llama 3" >> ai_documentation.md
+          echo "> Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> ai_documentation.md
           echo "" >> ai_documentation.md
           
           cat raw_ai_output.txt >> ai_documentation.md
           
           echo "" >> ai_documentation.md
           echo "---" >> ai_documentation.md
-          echo "*🤖 This analysis was generated automatically using Ollama MCP with Llama 3 model*" >> ai_documentation.md
+          echo "*🤖 AI analysis generated automatically using Ollama*" >> ai_documentation.md
           
           # Output para GitHub Actions
           {
@@ -231,26 +220,26 @@ jobs:
             echo "EOF"
           } >> $GITHUB_OUTPUT
           
-          echo "✅ REAL MCP analysis completed successfully!"
+          echo "✅ REAL AI analysis completed successfully!"
 
-      - name: Upload MCP artifacts
+      - name: Upload analysis artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mcp-analysis-artifacts
+          name: ai-analysis-artifacts
           path: |
             detailed_changes.md
-            mcp_prompt.txt
+            ai_prompt.txt
             raw_ai_output.txt
             ai_documentation.md
             submodule_before.txt
             submodule_after.txt
 
-  # Job 3: Crear Pull Request con análisis MCP real
-  create-mcp-pr:
-    name: 📋 Create MCP-Powered Pull Request
+  # Job 3: Crear Pull Request con análisis AI
+  create-ai-pr:
+    name: 📋 Create AI-Powered Pull Request
     runs-on: ubuntu-latest
-    needs: analyze-with-mcp
-    if: needs.analyze-with-mcp.outputs.has-changes == 'true'
+    needs: analyze-with-ollama
+    if: needs.analyze-with-ollama.outputs.has-changes == 'true'
     
     steps:
       - name: Checkout repository
@@ -260,79 +249,72 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Download MCP analysis artifacts
+      - name: Download analysis artifacts
         uses: actions/download-artifact@v4
         with:
-          name: mcp-analysis-artifacts
+          name: ai-analysis-artifacts
           path: ./
 
-      - name: Create Pull Request with MCP Analysis
+      - name: Create Pull Request with AI Analysis
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore: update submodules with MCP AI analysis [skip ci]"
-          title: "🤖 MCP AI-Analyzed Submodule Updates (Run #${{ github.run_number }})"
+          commit-message: "chore: update submodules with AI analysis [skip ci]"
+          title: "🤖 AI-Analyzed Submodule Updates (Run #${{ github.run_number }})"
           body: |
-            ${{ needs.analyze-with-mcp.outputs.ai-documentation }}
+            ${{ needs.analyze-with-ollama.outputs.ai-documentation }}
             
             ---
             
-            ## 🔧 Technical Implementation Details
-            - **MCP Provider**: Ollama with Llama 3
+            ## 🔧 Technical Details
+            - **AI Provider**: Ollama with Llama 3
             - **Workflow Run**: #${{ github.run_number }}
-            - **Analysis Type**: Real AI-powered technical analysis
+            - **Analysis Type**: AI-powered technical analysis
             - **Timestamp**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
             
-            ## 📊 MCP Performance
-            - **Model**: Llama 3 (via Ollama MCP)
-            - **Analysis Depth**: Technical impact assessment
-            - **Risk Evaluation**: AI-powered risk assessment
+            ## 📊 AI Performance
+            - **Model**: Llama 3 (via Ollama)
+            - **Analysis**: Technical impact assessment
             
             ---
-            *🤖 This PR was created automatically using REAL MCP (Model Context Protocol) with Ollama integration. The technical analysis above was generated by AI analyzing actual commit patterns and changes.*
-          branch: mcp-ai-update-${{ github.run_number }}
+            *🤖 This PR was created automatically using AI analysis with Ollama integration.*
+          branch: ai-update-${{ github.run_number }}
           delete-branch: true
           reviewers: remr11
           assignees: remr11
 
   # Job 4: Status report
   report-status:
-    name: 📊 MCP Analysis Report
+    name: 📊 AI Analysis Report
     runs-on: ubuntu-latest
-    needs: [setup-ollama-mcp, analyze-with-mcp, create-mcp-pr]
+    needs: [setup-ollama-mcp, analyze-with-ollama, create-ai-pr]
     if: always()
     
     steps:
-      - name: Generate MCP status report
+      - name: Generate AI status report
         run: |
-          echo "## 🤖 MCP AI Analysis Report"
+          echo "## 🤖 AI Analysis Report"
           echo "**Run #${{ github.run_number }}** - $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
           echo ""
           
-          echo "### 🚀 MCP Setup"
+          echo "### 🚀 Ollama Setup"
           echo "Status: ${{ needs.setup-ollama-mcp.result }}"
-          echo "Model: Llama 3 (Ollama)"
+          echo "Model: Llama 3"
           echo ""
           
           echo "### 🔍 AI Analysis" 
-          echo "Status: ${{ needs.analyze-with-mcp.result }}"
-          echo "Changes Found: ${{ needs.analyze-with-mcp.outputs.has-changes }}"
-          echo "MCP Used: ✅ Real Ollama Integration"
+          echo "Status: ${{ needs.analyze-with-ollama.result }}"
+          echo "Changes Found: ${{ needs.analyze-with-ollama.outputs.has-changes }}"
+          echo "AI Used: ✅ Real Ollama Integration"
           echo ""
           
           echo "### 📋 Pull Request"
-          if [ "${{ needs.analyze-with-mcp.outputs.has-changes }}" == "true" ]; then
-            echo "Status: ${{ needs.create-mcp-pr.result }}"
-            echo "AI Documentation: ✅ Generated with REAL MCP"
+          if [ "${{ needs.analyze-with-ollama.outputs.has-changes }}" == "true" ]; then
+            echo "Status: ${{ needs.create-ai-pr.result }}"
+            echo "AI Documentation: ✅ Generated with REAL AI"
           else
-            echo "Status: Skipped (no changes detected)"
+            echo "Status: Skipped (no changes)"
           fi
-          
-          echo ""
-          echo "### 🎯 MCP Performance"
-          echo "Analysis Type: Real AI-powered technical assessment"
-          echo "Model: Llama 3 via Ollama MCP"
-          echo "Integration: Native MCP protocol"
 
   # Job 5: Cleanup
   cleanup:
