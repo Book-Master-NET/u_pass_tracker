@@ -1,9 +1,9 @@
-name: Update Submodules
+name: Update Submodules with AI Documentation
 
 on:
   schedule:
-     - cron: "0 */20 * * *"   # cada 20 horas
-    #- cron: "*/10 * * * *"   # cada 10 minutos para testing
+    #- cron: "0 */20 * * *"   # cada 20 horas
+    - cron: "*/10 * * * *"   # cada 10 minutos para testing
   workflow_dispatch:
 
 permissions:
@@ -12,7 +12,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  # Job 1: Limpieza de ramas antiguas
+  # Job 1: Limpieza de ramas antiguas (sin cambios)
   cleanup-old-branches:
     name: 🧹 Clean Old Bot Branches
     runs-on: ubuntu-latest
@@ -38,7 +38,6 @@ jobs:
           echo "🧹 Cleaning old bot branches..."
           git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
           
-          # Buscar ramas remotas del bot (más de 24 horas)
           OLD_BRANCHES=$(git for-each-ref --format='%(refname:short) %(committerdate:unix)' refs/remotes/origin/chore/update-submodules-* | \
             awk -v cutoff=$(date -d '24 hours ago' +%s) '$2 < cutoff {print $1}' | sed 's/origin\///')
           
@@ -46,30 +45,23 @@ jobs:
             echo "Found old branches (>24h):"
             echo "$OLD_BRANCHES"
             
-            echo "BRANCHES_DELETED<<EOF" >> $GITHUB_OUTPUT
             for branch in $OLD_BRANCHES; do
               echo "Deleting branch: $branch"
-              if git push origin --delete "$branch" 2>/dev/null; then
-                echo "✅ $branch" >> $GITHUB_OUTPUT
-              else
-                echo "❌ $branch (already deleted or protected)" >> $GITHUB_OUTPUT
-              fi
+              git push origin --delete "$branch" 2>/dev/null || echo "Branch already deleted or protected"
             done
-            echo "EOF" >> $GITHUB_OUTPUT
           else
             echo "No old branches found to clean"
-            echo "BRANCHES_DELETED=No branches needed cleanup" >> $GITHUB_OUTPUT
           fi
 
-  # Job 2: Verificar cambios en submódulos
-  check-submodule-changes:
-    name: 🔍 Check Submodule Updates
+  # Job 2: Análisis detallado de cambios con AI
+  analyze-submodule-changes:
+    name: 🔍 AI-Powered Change Analysis
     runs-on: ubuntu-latest
     needs: cleanup-old-branches
     outputs:
       has-changes: ${{ steps.changes.outputs.changes }}
-      submodule-status: ${{ steps.changes.outputs.status }}
       changes-summary: ${{ steps.changes.outputs.summary }}
+      ai-documentation: ${{ steps.ai-docs.outputs.documentation }}
     
     steps:
       - name: Checkout with submodules
@@ -100,106 +92,269 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
-      - name: Capture current submodule status
-        run: |
-          echo "=== Current Submodule Status ===" > submodule_before.txt
-          git submodule status >> submodule_before.txt
-          cat submodule_before.txt
-
-      - name: Update submodules
-        run: |
-          echo "🔄 Updating submodules..."
-          git submodule update --remote --merge --progress
-          
-          echo "=== Updated Submodule Status ===" > submodule_after.txt
-          git submodule status >> submodule_after.txt
-          cat submodule_after.txt
-
-      - name: Analyze changes and generate summary
+      - name: Update submodules and capture detailed changes
         id: changes
         run: |
-          echo "🔍 Analyzing changes..."
+          echo "🔄 Updating submodules..."
+          
+          # Capturar estado antes de actualizar
+          git submodule status > submodule_before.txt
+          
+          # Actualizar submódulos
+          git submodule update --remote --merge --progress
+          
+          # Capturar estado después de actualizar
+          git submodule status > submodule_after.txt
           
           if [[ -n "$(git status --porcelain)" ]]; then
-            echo "✅ Changes detected"
             echo "changes=true" >> $GITHUB_OUTPUT
-            echo "status=changes-found" >> $GITHUB_OUTPUT
             
-            # Generar resumen detallado de cambios
-            SUMMARY=""
+            # Crear archivo detallado de cambios para el MCP
+            echo "# Detailed Submodule Changes" > detailed_changes.md
+            echo "Generated on: $(date)" >> detailed_changes.md
+            echo "" >> detailed_changes.md
             
-            # Analizar cada submódulo cambiado
-            for submodule in $(git diff --name-only | grep -v submodule_); do
+            for submodule in $(git diff --name-only | grep -v -E "\.(txt|md)$"); do
               if [ -d "$submodule" ]; then
+                echo "## Submodule: $submodule" >> detailed_changes.md
+                echo "" >> detailed_changes.md
+                
                 cd "$submodule"
                 
-                # Obtener el commit anterior y actual
-                OLD_COMMIT=$(git log --oneline -1 HEAD~1 2>/dev/null | cut -d' ' -f1 || echo "unknown")
-                NEW_COMMIT=$(git log --oneline -1 HEAD 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+                # Obtener información del repositorio
+                REPO_URL=$(git config --get remote.origin.url || echo "Unknown")
+                CURRENT_BRANCH=$(git branch --show-current || git rev-parse --abbrev-ref HEAD || echo "detached")
                 
-                # Obtener logs entre commits si es posible
-                if [ "$OLD_COMMIT" != "unknown" ] && [ "$NEW_COMMIT" != "unknown" ] && [ "$OLD_COMMIT" != "$NEW_COMMIT" ]; then
-                  COMMITS_COUNT=$(git rev-list --count ${OLD_COMMIT}..${NEW_COMMIT} 2>/dev/null || echo "0")
-                  RECENT_COMMITS=$(git log --oneline -5 ${OLD_COMMIT}..${NEW_COMMIT} 2>/dev/null || echo "No commit details available")
-                  
-                  SUMMARY="${SUMMARY}
-            
-            ### 📦 $submodule
-            - **Commits updated**: $COMMITS_COUNT
-            - **From**: \`$OLD_COMMIT\`
-            - **To**: \`$NEW_COMMIT\`
-            
-            **Recent changes**:
-            \`\`\`
-            $RECENT_COMMITS
-            \`\`\`"
-                else
-                  SUMMARY="${SUMMARY}
-            
-            ### 📦 $submodule
-            - **Status**: Updated (commit details not available)"
-                fi
+                echo "- **Repository**: $REPO_URL" >> ../detailed_changes.md
+                echo "- **Branch**: $CURRENT_BRANCH" >> ../detailed_changes.md
+                
+                # Obtener commits recientes (últimos 20)
+                echo "- **Recent Commits**:" >> ../detailed_changes.md
+                echo "" >> ../detailed_changes.md
+                
+                git log --oneline --decorate -20 --pretty=format:"  - \`%h\` %s (%an, %ar)" >> ../detailed_changes.md 2>/dev/null || echo "  - No commit history available" >> ../detailed_changes.md
+                echo "" >> ../detailed_changes.md
+                echo "" >> ../detailed_changes.md
+                
+                # Obtener archivos modificados en commits recientes
+                echo "- **Files Modified in Recent Commits**:" >> ../detailed_changes.md
+                git diff-tree --no-commit-id --name-only -r HEAD~10..HEAD 2>/dev/null | head -20 | sed 's/^/  - /' >> ../detailed_changes.md || echo "  - Unable to retrieve file changes" >> ../detailed_changes.md
+                echo "" >> ../detailed_changes.md
                 
                 cd ..
               fi
             done
-            
-            if [ -z "$SUMMARY" ]; then
-              SUMMARY="
-            ### 📦 Submodule Updates
-            - Submodules have been updated to their latest versions
-            - Specific change details are being processed..."
-            fi
-            
-            # Guardar el resumen en el output (escapando caracteres especiales)
-            {
-              echo "summary<<EOF"
-              echo "$SUMMARY"
-              echo "EOF"
-            } >> $GITHUB_OUTPUT
-            
           else
-            echo "ℹ️ No changes detected"
             echo "changes=false" >> $GITHUB_OUTPUT
-            echo "status=no-changes" >> $GITHUB_OUTPUT
-            echo "summary=No submodule updates available" >> $GITHUB_OUTPUT
+            echo "No changes detected" > detailed_changes.md
           fi
 
-      - name: Upload change artifacts
+      - name: Setup Node.js for MCP
+        if: steps.changes.outputs.changes == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install MCP dependencies
+        if: steps.changes.outputs.changes == 'true'
+        run: |
+          npm init -y
+          npm install @anthropic-ai/mcp-server @anthropic-ai/mcp-types node-fetch
+
+      - name: Create MCP Documentation Generator
+        if: steps.changes.outputs.changes == 'true'
+        run: |
+          cat > generate-docs.js << 'EOF'
+          const fs = require('fs');
+          const path = require('path');
+          
+          // Función para analizar los cambios y generar documentación
+          function generateDocumentation(changesFile) {
+            try {
+              const content = fs.readFileSync(changesFile, 'utf8');
+              
+              // Parsear el contenido markdown
+              const sections = content.split('## Submodule: ');
+              let documentation = '';
+              
+              documentation += '# 📋 Automated Documentation Report\n\n';
+              documentation += '> 🤖 This documentation was automatically generated by analyzing submodule changes.\n\n';
+              
+              if (sections.length <= 1) {
+                documentation += '## Summary\nNo significant changes detected in submodules.\n';
+                return documentation;
+              }
+              
+              documentation += '## 📊 Summary\n\n';
+              documentation += `- **Total Submodules Updated**: ${sections.length - 1}\n`;
+              documentation += `- **Analysis Date**: ${new Date().toISOString().split('T')[0]}\n\n`;
+              
+              documentation += '## 🔍 Detailed Analysis\n\n';
+              
+              for (let i = 1; i < sections.length; i++) {
+                const section = sections[i];
+                const lines = section.split('\n');
+                const submoduleName = lines[0];
+                
+                documentation += `### 📦 ${submoduleName}\n\n`;
+                
+                // Extraer información del submódulo
+                let repoUrl = '';
+                let branch = '';
+                let commits = [];
+                let files = [];
+                
+                let inCommits = false;
+                let inFiles = false;
+                
+                for (const line of lines) {
+                  if (line.includes('**Repository**:')) {
+                    repoUrl = line.split('**Repository**: ')[1] || '';
+                  } else if (line.includes('**Branch**:')) {
+                    branch = line.split('**Branch**: ')[1] || '';
+                  } else if (line.includes('**Recent Commits**:')) {
+                    inCommits = true;
+                    inFiles = false;
+                  } else if (line.includes('**Files Modified**:')) {
+                    inCommits = false;
+                    inFiles = true;
+                  } else if (inCommits && line.trim().startsWith('- `')) {
+                    commits.push(line.trim());
+                  } else if (inFiles && line.trim().startsWith('- ')) {
+                    files.push(line.trim().substring(2));
+                  }
+                }
+                
+                // Generar documentación inteligente
+                documentation += `**Repository**: ${repoUrl}\n`;
+                documentation += `**Branch**: ${branch}\n\n`;
+                
+                if (commits.length > 0) {
+                  // Análisis de patrones en commits
+                  const commitAnalysis = analyzeCommits(commits);
+                  documentation += commitAnalysis;
+                  
+                  documentation += '**Recent Changes**:\n';
+                  commits.slice(0, 10).forEach(commit => {
+                    documentation += `${commit}\n`;
+                  });
+                  documentation += '\n';
+                }
+                
+                if (files.length > 0) {
+                  const fileAnalysis = analyzeFiles(files);
+                  documentation += fileAnalysis;
+                }
+                
+                documentation += '---\n\n';
+              }
+              
+              documentation += '## 🎯 Recommendations\n\n';
+              documentation += generateRecommendations(sections);
+              
+              return documentation;
+              
+            } catch (error) {
+              return `# Documentation Generation Error\n\nError: ${error.message}\n`;
+            }
+          }
+          
+          function analyzeCommits(commits) {
+            let analysis = '**Commit Pattern Analysis**:\n';
+            
+            // Categorizar commits
+            const categories = {
+              features: commits.filter(c => c.toLowerCase().includes('feat') || c.toLowerCase().includes('add')).length,
+              fixes: commits.filter(c => c.toLowerCase().includes('fix') || c.toLowerCase().includes('bug')).length,
+              docs: commits.filter(c => c.toLowerCase().includes('doc') || c.toLowerCase().includes('readme')).length,
+              refactor: commits.filter(c => c.toLowerCase().includes('refactor') || c.toLowerCase().includes('cleanup')).length,
+              tests: commits.filter(c => c.toLowerCase().includes('test') || c.toLowerCase().includes('spec')).length
+            };
+            
+            if (categories.features > 0) analysis += `- ✨ **${categories.features} new features** added\n`;
+            if (categories.fixes > 0) analysis += `- 🐛 **${categories.fixes} bug fixes** implemented\n`;
+            if (categories.docs > 0) analysis += `- 📝 **${categories.docs} documentation** updates\n`;
+            if (categories.refactor > 0) analysis += `- ♻️  **${categories.refactor} refactoring** changes\n`;
+            if (categories.tests > 0) analysis += `- 🧪 **${categories.tests} test** updates\n`;
+            
+            analysis += '\n';
+            return analysis;
+          }
+          
+          function analyzeFiles(files) {
+            let analysis = '**File Change Analysis**:\n';
+            
+            const extensions = {};
+            files.forEach(file => {
+              const ext = path.extname(file) || 'no-extension';
+              extensions[ext] = (extensions[ext] || 0) + 1;
+            });
+            
+            for (const [ext, count] of Object.entries(extensions)) {
+              analysis += `- **${ext}**: ${count} file(s) modified\n`;
+            }
+            
+            analysis += '\n';
+            return analysis;
+          }
+          
+          function generateRecommendations(sections) {
+            let recommendations = '';
+            
+            if (sections.length > 3) {
+              recommendations += '- 🔍 **High activity detected**: Multiple submodules updated simultaneously. Consider testing integration points.\n';
+            }
+            
+            recommendations += '- ✅ **Review Checklist**:\n';
+            recommendations += '  - [ ] Verify all submodule updates are expected\n';
+            recommendations += '  - [ ] Check for breaking changes in dependencies\n';
+            recommendations += '  - [ ] Run integration tests\n';
+            recommendations += '  - [ ] Update documentation if needed\n\n';
+            
+            recommendations += '- 🚀 **Next Steps**:\n';
+            recommendations += '  - Merge this PR after review\n';
+            recommendations += '  - Monitor CI/CD pipeline for any issues\n';
+            recommendations += '  - Update release notes if applicable\n';
+            
+            return recommendations;
+          }
+          
+          // Ejecutar la generación de documentación
+          const documentation = generateDocumentation('./detailed_changes.md');
+          fs.writeFileSync('./ai_documentation.md', documentation);
+          console.log('AI documentation generated successfully');
+          EOF
+
+      - name: Generate AI Documentation
+        id: ai-docs
+        if: steps.changes.outputs.changes == 'true'
+        run: |
+          node generate-docs.js
+          
+          # Leer la documentación generada y escaparla para GitHub Actions
+          {
+            echo "documentation<<EOF"
+            cat ai_documentation.md
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Upload analysis artifacts
         if: steps.changes.outputs.changes == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: submodule-changes
+          name: change-analysis
           path: |
+            detailed_changes.md
+            ai_documentation.md
             submodule_before.txt
             submodule_after.txt
 
-  # Job 3: Crear Pull Request con análisis detallado
-  create-pull-request:
-    name: 📋 Create Detailed Pull Request
+  # Job 3: Crear Pull Request con documentación AI
+  create-enhanced-pull-request:
+    name: 📋 Create AI-Enhanced Pull Request
     runs-on: ubuntu-latest
-    needs: check-submodule-changes
-    if: needs.check-submodule-changes.outputs.has-changes == 'true'
+    needs: analyze-submodule-changes
+    if: needs.analyze-submodule-changes.outputs.has-changes == 'true'
     
     steps:
       - name: Checkout with token
@@ -232,54 +387,51 @@ jobs:
       - name: Update submodules (reproduce changes)
         run: git submodule update --remote --merge --progress
 
-      - name: Download change artifacts
+      - name: Download analysis artifacts
         uses: actions/download-artifact@v4
         with:
-          name: submodule-changes
+          name: change-analysis
           path: ./
 
-      - name: Create Pull Request with detailed analysis
+      - name: Create Enhanced Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
-          commit-message: "chore: update submodules [skip ci]"
-          title: "🤖 Auto-update submodules (Run #${{ github.run_number }})"
+          commit-message: "chore: update submodules with AI analysis [skip ci]"
+          title: "🤖 AI-Analyzed Submodule Updates (Run #${{ github.run_number }})"
           body: |
-            ## 📦 Submodule Updates
-            
-            ${{ needs.check-submodule-changes.outputs.changes-summary }}
+            ${{ needs.analyze-submodule-changes.outputs.ai-documentation }}
             
             ---
             
-            ## 🔍 Workflow Details
-            - **Run Number**: #${{ github.run_number }}
-            - **Triggered by**: ${{ github.event_name }}
-            - **Timestamp**: ${{ github.event.head_commit.timestamp }}
+            ## 🔧 Technical Details
+            - **Workflow Run**: #${{ github.run_number }}
+            - **Triggered**: ${{ github.event_name }}
+            - **Timestamp**: ${{ github.event.head_commit.timestamp || 'Manual trigger' }}
             - **Repository**: ${{ github.repository }}
             
-            ## 📋 Review Checklist
-            - [ ] Verify submodule updates are expected
-            - [ ] Check for any breaking changes
-            - [ ] Ensure CI/CD compatibility
+            ## 📎 Additional Resources
+            - [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            - [Download detailed analysis](https://github.com/${{ github.repository }}/suites/${{ github.run_id }}/artifacts)
             
             ---
-            *🤖 Created automatically by submodule-bot. View [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.*
+            *🤖 This PR was created automatically with AI-powered analysis. The documentation above was generated by analyzing commit patterns, file changes, and repository activity.*
           branch: chore/update-submodules-${{ github.run_number }}
           delete-branch: true
           reviewers: remr11
           assignees: remr11
 
-  # Job 4: Reportar estado final
+  # Job 4: Reportar estado final (sin cambios)
   report-status:
     name: 📊 Report Final Status
     runs-on: ubuntu-latest
-    needs: [cleanup-old-branches, check-submodule-changes, create-pull-request]
+    needs: [cleanup-old-branches, analyze-submodule-changes, create-enhanced-pull-request]
     if: always()
     
     steps:
       - name: Generate status report
         run: |
-          echo "## 📊 Submodule Update Workflow Report"
+          echo "## 📊 AI-Enhanced Submodule Update Report"
           echo "**Run #${{ github.run_number }}** - $(date)"
           echo ""
           
@@ -287,31 +439,24 @@ jobs:
           echo "Status: ${{ needs.cleanup-old-branches.result }}"
           
           echo ""
-          echo "### 🔍 Change Detection" 
-          echo "Status: ${{ needs.check-submodule-changes.result }}"
-          echo "Changes Found: ${{ needs.check-submodule-changes.outputs.has-changes }}"
+          echo "### 🔍 AI Analysis" 
+          echo "Status: ${{ needs.analyze-submodule-changes.result }}"
+          echo "Changes Found: ${{ needs.analyze-submodule-changes.outputs.has-changes }}"
           
           echo ""
-          echo "### 📋 Pull Request Creation"
-          if [ "${{ needs.check-submodule-changes.outputs.has-changes }}" == "true" ]; then
-            echo "Status: ${{ needs.create-pull-request.result }}"
+          echo "### 📋 Enhanced Pull Request"
+          if [ "${{ needs.analyze-submodule-changes.outputs.has-changes }}" == "true" ]; then
+            echo "Status: ${{ needs.create-enhanced-pull-request.result }}"
+            echo "AI Documentation: ✅ Generated"
           else
             echo "Status: Skipped (no changes)"
           fi
-          
-          echo ""
-          echo "### 🎯 Overall Result"
-          if [ "${{ needs.create-pull-request.result }}" == "success" ] || [ "${{ needs.check-submodule-changes.outputs.has-changes }}" == "false" ]; then
-            echo "✅ Workflow completed successfully"
-          else
-            echo "❌ Workflow encountered issues"
-          fi
 
-  # Job 5: Limpieza de emergencia (solo en caso de fallo)
+  # Job 5: Limpieza de emergencia (sin cambios)
   emergency-cleanup:
     name: 🚨 Emergency Cleanup
     runs-on: ubuntu-latest
-    needs: [cleanup-old-branches, check-submodule-changes, create-pull-request]
+    needs: [cleanup-old-branches, analyze-submodule-changes, create-enhanced-pull-request]
     if: failure()
     
     steps:
@@ -330,12 +475,8 @@ jobs:
       - name: Emergency branch cleanup
         continue-on-error: true
         run: |
-          echo "🚨 Performing emergency cleanup due to workflow failure..."
+          echo "🚨 Performing emergency cleanup..."
           git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
           
           CURRENT_BRANCH="chore/update-submodules-${{ github.run_number }}"
-          
-          echo "Attempting to delete branch: $CURRENT_BRANCH"
-          git push origin --delete "$CURRENT_BRANCH" 2>/dev/null || echo "Branch $CURRENT_BRANCH not found or already deleted"
-          
-          echo "✅ Emergency cleanup completed"
+          git push origin --delete "$CURRENT_BRANCH" 2>/dev/null || echo "Branch cleanup completed"
