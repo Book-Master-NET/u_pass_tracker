@@ -32,6 +32,15 @@ jobs:
           installation_retrieval_mode: repository
           installation_retrieval_payload: ${{ github.repository }}
 
+      - name: Emergency branch cleanup
+        continue-on-error: true
+        run: |
+          echo "🚨 Performing emergency cleanup..."
+          git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+          
+          CURRENT_BRANCH="chore/update-submodules-${{ github.run_number }}"
+          git push origin --delete "$CURRENT_BRANCH" 2>/dev/null || echo "Branch cleanup completed"
+
       - name: Clean old bot branches
         continue-on-error: true
         run: |
@@ -149,9 +158,6 @@ jobs:
             echo "No changes detected" > detailed_changes.md
           fi
 
-      # NO MÁS SETUP DE NODE.JS NI INSTALACIÓN DE PAQUETES
-      # Usar solo herramientas nativas del sistema
-
       - name: Create Advanced Documentation Generator (Pure Bash)
         if: steps.changes.outputs.changes == 'true'
         run: |
@@ -167,10 +173,10 @@ jobs:
             
             # Header
             cat > "$output_file" << 'EOFDOC'
-# 🤖 AI-Powered Submodule Analysis Report
-
-> 📊 Automated analysis generated using advanced pattern recognition
-EOFDOC
+          # 🤖 AI-Powered Submodule Analysis Report
+          
+          > 📊 Automated analysis generated using advanced pattern recognition
+          EOFDOC
             
             echo "" >> "$output_file"
             echo "**Generated on**: $(date -u '+%B %d, %Y at %H:%M UTC')" >> "$output_file"
@@ -179,13 +185,13 @@ EOFDOC
             # Verificar si hay cambios
             if ! grep -q "## Submodule:" "$input_file"; then
               cat >> "$output_file" << 'EOFDOC'
-## 📋 Summary
-
-✨ **Status**: No submodule changes detected in this update cycle.
-
-🔍 **Next Check**: The system will continue monitoring for changes every 20 hours.
-
-EOFDOC
+          ## 📋 Summary
+          
+          ✨ **Status**: No submodule changes detected in this update cycle.
+          
+          🔍 **Next Check**: The system will continue monitoring for changes every 20 hours.
+          
+          EOFDOC
               return 0
             fi
             
@@ -194,16 +200,16 @@ EOFDOC
             
             # Executive Summary
             cat >> "$output_file" << EOFDOC
-## 📈 Executive Summary
-
-| Metric | Value |
-|--------|-------|
-| 📦 **Submodules Updated** | $submodule_count |
-| 📅 **Analysis Date** | $(date -u '+%Y-%m-%d') |
-| 🤖 **Automation Level** | Fully Automated |
-| 🎯 **Success Rate** | 100% |
-
-EOFDOC
+          ## 📈 Executive Summary
+          
+          | Metric | Value |
+          |--------|-------|
+          | 📦 **Submodules Updated** | $submodule_count |
+          | 📅 **Analysis Date** | $(date -u '+%Y-%m-%d') |
+          | 🤖 **Automation Level** | Fully Automated |
+          | 🎯 **Success Rate** | 100% |
+          
+          EOFDOC
             
             # Análisis de criticidad
             if [ "$submodule_count" -gt 5 ]; then
@@ -381,12 +387,12 @@ EOFDOC
             
             # Impact Analysis
             cat >> "$output_file" << EOFDOC
-
-## 🎯 Impact Analysis
-
-### 🔄 Integration Considerations
-
-EOFDOC
+          
+          ## 🎯 Impact Analysis
+          
+          ### 🔄 Integration Considerations
+          
+          EOFDOC
             
             if [ "$submodule_count" -eq 1 ]; then
               echo "- 🎯 **Single Submodule Update**: Low integration complexity" >> "$output_file"
@@ -401,20 +407,20 @@ EOFDOC
             
             # Pre-Merge Checklist
             cat >> "$output_file" << 'EOFDOC'
-
-### 📋 Pre-Merge Checklist
-
-- [ ] 🔍 **Code Review**: All changes reviewed by designated reviewers
-- [ ] 🧪 **Tests Pass**: Automated test suite executed successfully
-- [ ] 🔗 **Integration**: Cross-component compatibility verified
-- [ ] 📖 **Documentation**: Updated if public APIs changed
-- [ ] 🚀 **Deployment**: Staging environment tested
-
-## 🚀 Smart Recommendations
-
-### 📈 Recommended Actions
-
-EOFDOC
+          
+          ### 📋 Pre-Merge Checklist
+          
+          - [ ] 🔍 **Code Review**: All changes reviewed by designated reviewers
+          - [ ] 🧪 **Tests Pass**: Automated test suite executed successfully
+          - [ ] 🔗 **Integration**: Cross-component compatibility verified
+          - [ ] 📖 **Documentation**: Updated if public APIs changed
+          - [ ] 🚀 **Deployment**: Staging environment tested
+          
+          ## 🚀 Smart Recommendations
+          
+          ### 📈 Recommended Actions
+          
+          EOFDOC
             
             if [ "$submodule_count" -gt 5 ]; then
               echo "1. 🔍 **Enhanced Review**: Schedule extended code review session" >> "$output_file"
@@ -440,33 +446,33 @@ EOFDOC
             fi
             
             cat >> "$output_file" << EOFDOC
-
-### ⏱️ Timeline Suggestions
-
-- **Review Time**: $review_time
-- **Testing Phase**: $testing_time
-- **Deployment Window**: $deployment_window
-
-## 📊 Update Metrics
-
-\`\`\`
-╭─────────────────────────────────────────╮
-│           UPDATE DASHBOARD              │
-├─────────────────────────────────────────┤
-│ Submodules Updated: $(printf "%19s" "$submodule_count") │
-│ Analysis Date: $(printf "%22s" "$(date -u '+%Y-%m-%d')") │
-│ Analysis Time: $(printf "%22s" "$(date -u '+%H:%M:%S')") │
-│ Status: ✅ COMPLETED                    │
-╰─────────────────────────────────────────╯
-\`\`\`
-
-### 📈 Historical Context
-
-- 📅 **Update Frequency**: Every 20 hours (automated)
-- 🔄 **Success Rate**: 99.9% (automated monitoring)
-- 🤖 **Automation Level**: Fully automated with AI analysis
-
-EOFDOC
+          
+          ### ⏱️ Timeline Suggestions
+          
+          - **Review Time**: $review_time
+          - **Testing Phase**: $testing_time
+          - **Deployment Window**: $deployment_window
+          
+          ## 📊 Update Metrics
+          
+          \`\`\`
+          ╭─────────────────────────────────────────╮
+          │           UPDATE DASHBOARD              │
+          ├─────────────────────────────────────────┤
+          │ Submodules Updated: $(printf "%19s" "$submodule_count") │
+          │ Analysis Date: $(printf "%22s" "$(date -u '+%Y-%m-%d')") │
+          │ Analysis Time: $(printf "%22s" "$(date -u '+%H:%M:%S')") │
+          │ Status: ✅ COMPLETED                    │
+          ╰─────────────────────────────────────────╯
+          \`\`\`
+          
+          ### 📈 Historical Context
+          
+          - 📅 **Update Frequency**: Every 20 hours (automated)
+          - 🔄 **Success Rate**: 99.9% (automated monitoring)
+          - 🤖 **Automation Level**: Fully automated with AI analysis
+          
+          EOFDOC
             
             echo "✅ AI documentation generated successfully using native tools!"
           }
@@ -627,12 +633,3 @@ EOFDOC
           private_key: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_PRIVATE_KEY }}
           installation_retrieval_mode: repository
           installation_retrieval_payload: ${{ github.repository }}
-
-      - name: Emergency branch cleanup
-        continue-on-error: true
-        run: |
-          echo "🚨 Performing emergency cleanup..."
-          git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
-          
-          CURRENT_BRANCH="chore/update-submodules-${{ github.run_number }}"
-          git push origin --delete "$CURRENT_BRANCH" 2>/dev/null || echo "Branch cleanup completed"
