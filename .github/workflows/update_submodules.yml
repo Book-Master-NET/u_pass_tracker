@@ -41,18 +41,19 @@ jobs:
           ollama list
           echo "✅ Ollama verification complete"
 
-      - name: Setup Node.js for MCP
+      - name: Setup Node.js without cache (para paquetes globales)
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          # Removemos cache ya que no tenemos package.json local
+          cache: 'npm'  # Esto puede fallar sin lock file, pero es opcional
 
-      - name: Install MCP Ollama Server
+      - name: Install MCP Ollama Server globally
         run: |
           echo "📦 Installing MCP Ollama server..."
           npm install -g @modelcontextprotocol/server-ollama
           npm install -g @modelcontextprotocol/cli
-          echo "✅ MCP dependencies installed"
+          echo "✅ MCP dependencies installed globally"
 
       - name: Test MCP connection
         run: |
