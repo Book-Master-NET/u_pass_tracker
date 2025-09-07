@@ -325,10 +325,11 @@ jobs:
           console.log('AI documentation generated successfully');
           EOF
 
-      - name: Generate AI Documentation
+      - name: Generate Advanced AI Documentation
         id: ai-docs
         if: steps.changes.outputs.changes == 'true'
         run: |
+          echo "🤖 Generating AI-powered documentation..."
           node generate-docs.js
           
           # Leer la documentación generada y escaparla para GitHub Actions
@@ -337,6 +338,8 @@ jobs:
             cat ai_documentation.md
             echo "EOF"
           } >> $GITHUB_OUTPUT
+          
+          echo "✅ Documentation generated successfully"
 
       - name: Upload analysis artifacts
         if: steps.changes.outputs.changes == 'true'
