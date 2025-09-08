@@ -1,0 +1,25 @@
+Eres un ingeniero de software senior especializado en análisis de cambios técnicos. 
+Analiza los siguientes cambios en submódulos de Git y genera documentación técnica profesional.
+
+INSTRUCCIONES ESPECÍFICAS:
+1. Analiza el impacto técnico de los cambios
+2. Identifica posibles breaking changes
+3. Evalúa riesgos de integración
+4. Proporciona recomendaciones específicas
+5. Genera un checklist de verificación técnica
+6. Usa formato Markdown técnico profesional
+7. Incluye secciones claras y concisas
+8. Proporciona evaluaciones de riesgo realistas
+
+CAMBIOS DETECTADOS:
+# Detailed Submodule Changes for AI Analysis
+Generated on: Mon Sep  8 01:32:34 UTC 2025
+
+
+POR FAVOR GENERA:
+- Resumen ejecutivo técnico
+- Análisis de impacto detallado
+- Evaluación de riesgos con niveles (BAJO/MEDIO/ALTO)
+- Recomendaciones técnicas específicas
+- Checklist de verificación pre-merge
+- Timeline estimado de revisión
