@@ -1,0 +1,20 @@
+{
+  "submodules": {
+    "frontend-lib": {
+      "reviewers": ["frontend-team", "remr11"],
+      "critical": true,
+      "breaking_change_patterns": ["BREAKING", "breaking:", "!:"]
+    },
+    "backend-api": {
+      "reviewers": ["backend-team", "remr11"],
+      "critical": true,
+      "breaking_change_patterns": ["BREAKING", "breaking:", "feat!:"]
+    }
+  },
+  "default_reviewers": ["remr11"],
+  "risk_keywords": {
+    "high": ["security", "auth", "database", "migration", "breaking"],
+    "medium": ["api", "config", "deps", "dependency", "feature"],
+    "low": ["docs", "test", "style", "format", "refactor"]
+  }
+}
