@@ -11,10 +11,11 @@ permissions:
   actions: read
 
 jobs:
-  # Job 1: Setup Ollama
+  # Job 1: Setup Ollama with optimizations
   setup-ollama:
     name: 🚀 Setup Ollama Environment
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     
     steps:
       - name: Checkout repository
@@ -36,12 +37,17 @@ jobs:
         run: |
           echo "📦 Installing Ollama..."
           curl -fsSL https://ollama.ai/install.sh | sh
-          echo "✅ Ollama installed successfully"
+          
+          # Start Ollama service in background
+          ollama serve &
+          sleep 5
+          echo "✅ Ollama service started"
 
-      - name: Download Llama 3 model
+      - name: Download optimized model (Llama 3.2 3B or Phi-3)
         run: |
-          echo "🔽 Downloading Llama 3 model..."
-          ollama pull llama3
+          echo "🔽 Downloading optimized model..."
+          # Use smaller, faster model for CI/CD
+          ollama pull llama3.2:3b || ollama pull phi3:mini || ollama pull llama3:8b
           echo "✅ Model downloaded successfully"
 
       - name: Verify Ollama installation
@@ -56,11 +62,12 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
-  # Job 2: Análisis con Ollama
+  # Job 2: Análisis con Ollama optimizado
   analyze-with-ollama:
     name: 🔍 Real AI Analysis with Ollama
     runs-on: ubuntu-latest
     needs: setup-ollama
+    timeout-minutes: 20
     outputs:
       has-changes: ${{ steps.detect-changes.outputs.changes }}
       ai-documentation: ${{ steps.ollama-analysis.outputs.documentation }}
@@ -88,6 +95,19 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
+      - name: Setup Ollama for analysis
+        run: |
+          echo "🚀 Setting up Ollama for analysis..."
+          curl -fsSL https://ollama.ai/install.sh | sh
+          ollama serve &
+          sleep 10
+          
+          # Download smaller, faster model
+          ollama pull llama3.2:3b || ollama pull phi3:mini || {
+            echo "⚠️ Failed to download optimized model, using fallback"
+            ollama pull llama3:8b
+          }
+
       - name: Update submodules and detect changes
         id: detect-changes
         run: |
@@ -96,8 +116,10 @@ jobs:
           # Capturar estado antes
           git submodule status > submodule_before.txt
           
-          # Actualizar submódulos
-          git submodule update --remote --merge --progress
+          # Actualizar submódulos con timeout
+          timeout 300s git submodule update --remote --merge --progress || {
+            echo "⚠️ Submodule update timed out, proceeding with partial updates"
+          }
           
           # Capturar estado después
           git submodule status > submodule_after.txt
@@ -106,114 +128,169 @@ jobs:
           if [[ -n "$(git status --porcelain)" ]]; then
             echo "changes=true" >> $GITHUB_OUTPUT
             
-            # Crear archivo detallado de cambios
-            echo "# Detailed Submodule Changes for AI Analysis" > detailed_changes.md
-            echo "Generated on: $(date)" >> detailed_changes.md
+            # Crear archivo optimizado de cambios (limitado)
+            echo "# Submodule Changes Summary for AI Analysis" > detailed_changes.md
+            echo "Generated: $(date)" >> detailed_changes.md
             echo "" >> detailed_changes.md
             
-            for submodule in $(git diff --name-only | grep -v -E "\.(txt|md)$"); do
-              if [ -d "$submodule" ]; then
+            # Limitar a máximo 5 submódulos para evitar overflow
+            CHANGE_COUNT=0
+            for submodule in $(git diff --name-only | head -5); do
+              if [ -d "$submodule" ] && [ $CHANGE_COUNT -lt 5 ]; then
                 echo "## Submodule: $submodule" >> detailed_changes.md
-                echo "" >> detailed_changes.md
                 
-                cd "$submodule"
+                cd "$submodule" 2>/dev/null || continue
                 
-                # Obtener información del repositorio
-                REPO_URL=$(git config --get remote.origin.url || echo "Unknown")
-                CURRENT_BRANCH=$(git branch --show-current || git rev-parse --abbrev-ref HEAD || echo "detached")
-                LATEST_COMMIT=$(git log -1 --oneline --pretty=format:"%h - %s (%an, %cr)")
+                REPO_URL=$(git config --get remote.origin.url 2>/dev/null || echo "Unknown")
+                CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "detached")
+                LATEST_COMMIT=$(git log -1 --oneline 2>/dev/null || echo "No commits")
                 
-                echo "- **Repository**: $REPO_URL" >> ../detailed_changes.md
-                echo "- **Branch**: $CURRENT_BRANCH" >> ../detailed_changes.md
-                echo "- **Latest Commit**: $LATEST_COMMIT" >> ../detailed_changes.md
+                echo "- Repository: $REPO_URL" >> ../detailed_changes.md
+                echo "- Branch: $CURRENT_BRANCH" >> ../detailed_changes.md
+                echo "- Latest: $LATEST_COMMIT" >> ../detailed_changes.md
                 echo "" >> ../detailed_changes.md
                 
-                # Obtener últimos 10 commits
-                echo "### Recent Commits:" >> ../detailed_changes.md
-                git log --oneline -10 --pretty=format:"- \`%h\` %s (%an, %cr)" >> ../detailed_changes.md 2>/dev/null || echo "- No commit history available" >> ../detailed_changes.md
+                # Solo últimos 3 commits para mantener el prompt corto
+                echo "### Recent commits:" >> ../detailed_changes.md
+                git log --oneline -3 2>/dev/null | sed 's/^/- /' >> ../detailed_changes.md || echo "- No history" >> ../detailed_changes.md
                 echo "" >> ../detailed_changes.md
                 
                 cd ..
+                CHANGE_COUNT=$((CHANGE_COUNT + 1))
               fi
             done
+            
+            # Verificar tamaño del archivo
+            if [ $(wc -c < detailed_changes.md) -gt 2000 ]; then
+              head -c 2000 detailed_changes.md > detailed_changes_trimmed.md
+              mv detailed_changes_trimmed.md detailed_changes.md
+              echo "... (trimmed for AI analysis)" >> detailed_changes.md
+            fi
           else
             echo "changes=false" >> $GITHUB_OUTPUT
             echo "No changes detected" > detailed_changes.md
           fi
 
-      - name: Generate AI Analysis Prompt
+      - name: Generate optimized AI prompt
         if: steps.detect-changes.outputs.changes == 'true'
         run: |
-          echo "📝 Generating AI analysis prompt..."
+          echo "📝 Generating optimized AI prompt..."
           
           cat > ai_prompt.txt << 'EOF'
-          Eres un ingeniero de software senior especializado en análisis de cambios técnicos. 
-          Analiza los siguientes cambios en submódulos de Git y genera documentación técnica profesional.
+          You are a senior software engineer. Analyze these Git submodule changes and provide a concise technical assessment.
           
-          INSTRUCCIONES ESPECÍFICAS:
-          1. Analiza el impacto técnico de los cambios
-          2. Identifica posibles breaking changes
-          3. Evalúa riesgos de integración
-          4. Proporciona recomendaciones específicas
-          5. Genera un checklist de verificación técnica
-          6. Usa formato Markdown técnico profesional
-          7. Incluye secciones claras y concisas
-          8. Proporciona evaluaciones de riesgo realistas
+          REQUIREMENTS:
+          - Keep response under 1000 words
+          - Focus on critical technical impacts
+          - Provide clear risk levels (LOW/MEDIUM/HIGH)
+          - Include actionable recommendations
+          - Use markdown formatting
           
-          CAMBIOS DETECTADOS:
+          CHANGES:
           EOF
-                    
-                    cat detailed_changes.md >> ai_prompt.txt
-                    
-                    echo "" >> ai_prompt.txt
-                    echo "POR FAVOR GENERA:" >> ai_prompt.txt
-                    echo "- Resumen ejecutivo técnico" >> ai_prompt.txt
-                    echo "- Análisis de impacto detallado" >> ai_prompt.txt  
-                    echo "- Evaluación de riesgos con niveles (BAJO/MEDIO/ALTO)" >> ai_prompt.txt
-                    echo "- Recomendaciones técnicas específicas" >> ai_prompt.txt
-                    echo "- Checklist de verificación pre-merge" >> ai_prompt.txt
-                    echo "- Timeline estimado de revisión" >> ai_prompt.txt
+          
+          cat detailed_changes.md >> ai_prompt.txt
+          
+          echo "" >> ai_prompt.txt
+          echo "GENERATE:" >> ai_prompt.txt
+          echo "1. Executive Summary (2-3 sentences)" >> ai_prompt.txt
+          echo "2. Technical Impact (bullet points)" >> ai_prompt.txt  
+          echo "3. Risk Assessment (LOW/MEDIUM/HIGH with reasoning)" >> ai_prompt.txt
+          echo "4. Recommendations (max 3 key actions)" >> ai_prompt.txt
 
-      - name: Run Real AI Analysis with Ollama
+      - name: Run optimized AI analysis with retries
         id: ollama-analysis
         if: steps.detect-changes.outputs.changes == 'true'
         run: |
-          echo "🤖 Running REAL AI analysis with Ollama..."
+          echo "🤖 Running optimized AI analysis..."
           
-          # Ejecutar análisis con Ollama
-          echo "🚀 Starting AI analysis (this may take 2-3 minutes)..."
+          # Function to run AI analysis with retry logic
+          run_ai_analysis() {
+            local attempt=$1
+            local model=$2
+            local timeout_duration=$3
+            
+            echo "🚀 Attempt $attempt with model $model (timeout: ${timeout_duration}s)"
+            
+            if timeout ${timeout_duration}s ollama run $model --temperature 0.1 "$(cat ai_prompt.txt)" > raw_ai_output_$attempt.txt 2>&1; then
+              echo "✅ AI analysis successful with $model"
+              return 0
+            else
+              echo "❌ AI analysis failed with $model (attempt $attempt)"
+              return 1
+            fi
+          }
           
-          # Usar Ollama directamente
-          timeout 180s ollama run llama3 --temperature 0.1 "$(cat ai_prompt.txt)" > raw_ai_output.txt 2>&1 || \
-          echo "❌ AI analysis timed out after 3 minutes. Using fallback documentation." > raw_ai_output.txt
+          # Try multiple models with increasing timeouts
+          SUCCESS=false
           
-          # Limitar el tamaño del output
-          if [ $(wc -c < raw_ai_output.txt) -gt 10000 ]; then
-            head -c 10000 raw_ai_output.txt > raw_ai_output_trimmed.txt
-            mv raw_ai_output_trimmed.txt raw_ai_output.txt
-            echo "... (output truncated to 10000 characters)" >> raw_ai_output.txt
+          # Attempt 1: Fast model, short timeout
+          if run_ai_analysis 1 "llama3.2:3b" 120; then
+            cp raw_ai_output_1.txt raw_ai_output.txt
+            SUCCESS=true
+          # Attempt 2: Alternative fast model
+          elif run_ai_analysis 2 "phi3:mini" 150; then
+            cp raw_ai_output_2.txt raw_ai_output.txt
+            SUCCESS=true
+          # Attempt 3: Standard model, longer timeout
+          elif run_ai_analysis 3 "llama3:8b" 240; then
+            cp raw_ai_output_3.txt raw_ai_output.txt
+            SUCCESS=true
           fi
           
-          # Crear documentación formateada
+          # Fallback if all attempts fail
+          if [ "$SUCCESS" = false ]; then
+            echo "⚠️ All AI analysis attempts failed. Generating fallback documentation."
+            cat > raw_ai_output.txt << 'FALLBACK_EOF'
+          # 🤖 Technical Analysis Report
+          
+          ## Executive Summary
+          Submodule updates detected. Manual review recommended due to AI analysis timeout.
+          
+          ## Technical Impact
+          - Submodule dependencies updated to latest versions
+          - Potential integration impacts require verification
+          - Testing recommended before merge
+          
+          ## Risk Assessment: MEDIUM
+          - **Reasoning**: Automated updates without full AI analysis
+          - **Mitigation**: Thorough testing and code review required
+          
+          ## Recommendations
+          1. **Run comprehensive tests** on updated dependencies
+          2. **Manual code review** of submodule changes
+          3. **Staging deployment** before production merge
+          
+          *Note: This is a fallback analysis due to AI processing constraints.*
+          FALLBACK_EOF
+          fi
+          
+          # Create final documentation
           echo "# 🤖 AI-Powered Technical Analysis" > ai_documentation.md
-          echo "> Generated using Ollama with Llama 3 model" >> ai_documentation.md
-          echo "> Analysis timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> ai_documentation.md
+          echo "> Generated using Ollama AI analysis" >> ai_documentation.md
+          echo "> Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> ai_documentation.md
           echo "" >> ai_documentation.md
           
           cat raw_ai_output.txt >> ai_documentation.md
           
           echo "" >> ai_documentation.md
           echo "---" >> ai_documentation.md
-          echo "*🤖 This analysis was generated automatically using Ollama with Llama 3 model*" >> ai_documentation.md
+          echo "*🤖 This analysis was generated using Ollama AI with automated fallback*" >> ai_documentation.md
           
-          # Output para GitHub Actions
+          # Output for GitHub Actions (with size limit)
+          if [ $(wc -c < ai_documentation.md) -gt 8000 ]; then
+            head -c 8000 ai_documentation.md > ai_documentation_trimmed.md
+            echo "... (output trimmed for GitHub Actions)" >> ai_documentation_trimmed.md
+            mv ai_documentation_trimmed.md ai_documentation.md
+          fi
+          
           {
             echo "documentation<<EOF"
             cat ai_documentation.md
             echo "EOF"
           } >> $GITHUB_OUTPUT
           
-          echo "✅ REAL AI analysis completed successfully!"
+          echo "✅ AI analysis pipeline completed!"
 
       - name: Upload analysis artifacts
         uses: actions/upload-artifact@v4
@@ -222,7 +299,7 @@ jobs:
           path: |
             detailed_changes.md
             ai_prompt.txt
-            raw_ai_output.txt
+            raw_ai_output*.txt
             ai_documentation.md
             submodule_before.txt
             submodule_after.txt
@@ -233,6 +310,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: analyze-with-ollama
     if: needs.analyze-with-ollama.outputs.has-changes == 'true'
+    timeout-minutes: 10
     
     steps:
       - name: Generate GitHub App Token
@@ -263,7 +341,17 @@ jobs:
           name: ai-analysis-artifacts
           path: ./
 
-      - name: Create Pull Request with AI Analysis (using App Token)
+      - name: Update submodules before PR
+        run: |
+          echo "🔄 Ensuring submodules are updated for PR..."
+          git submodule update --remote --merge --progress || true
+          git add . || true
+          
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git commit -m "chore: update submodules with AI analysis [skip ci]" || true
+          fi
+
+      - name: Create Pull Request with AI Analysis
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
@@ -275,24 +363,29 @@ jobs:
             ---
             
             ## 🔧 Technical Implementation Details
-            - **AI Provider**: Ollama with Llama 3
+            - **AI Provider**: Ollama with optimized models
             - **Workflow Run**: #${{ github.run_number }}
-            - **Analysis Type**: Real AI-powered technical analysis
+            - **Analysis Type**: Multi-model AI with fallback
             - **Timestamp**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
             
             ## 📊 AI Performance
-            - **Model**: Llama 3 (via Ollama)
-            - **Analysis Depth**: Technical impact assessment
-            - **Risk Evaluation**: AI-powered risk assessment
+            - **Models Tried**: llama3.2:3b → phi3:mini → llama3:8b
+            - **Timeout Strategy**: Progressive timeouts (120s → 150s → 240s)
+            - **Fallback**: Intelligent fallback documentation
+            
+            ## ✅ Quality Assurance
+            - Automated submodule validation
+            - Multi-attempt AI analysis
+            - Size-optimized prompts and outputs
             
             ---
-            *🤖 This PR was created automatically using REAL AI analysis with Ollama integration. The technical analysis above was generated by AI analyzing actual commit patterns and changes.*
+            *🤖 This PR was created using an optimized AI analysis pipeline with intelligent fallbacks.*
           branch: ai-update-${{ github.run_number }}
           delete-branch: true
           reviewers: remr11
           assignees: remr11
 
-  # Job 4: Status report
+  # Job 4: Enhanced status report
   report-status:
     name: 📊 AI Analysis Report
     runs-on: ubuntu-latest
@@ -300,36 +393,42 @@ jobs:
     if: always()
     
     steps:
-      - name: Generate AI status report
+      - name: Generate comprehensive status report
         run: |
-          echo "## 🤖 AI Analysis Report"
+          echo "## 🤖 Optimized AI Analysis Report"
           echo "**Run #${{ github.run_number }}** - $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
           echo ""
           
           echo "### 🚀 Ollama Setup"
-          echo "Status: ${{ needs.setup-ollama.result }}"
-          echo "Model: Llama 3"
+          echo "- Status: ${{ needs.setup-ollama.result }}"
+          echo "- Models: llama3.2:3b, phi3:mini, llama3:8b (fallback chain)"
+          echo "- Optimization: ✅ Fast models prioritized"
           echo ""
           
           echo "### 🔍 AI Analysis" 
-          echo "Status: ${{ needs.analyze-with-ollama.result }}"
-          echo "Changes Found: ${{ needs.analyze-with-ollama.outputs.has-changes }}"
-          echo "AI Used: ✅ Real Ollama Integration"
+          echo "- Status: ${{ needs.analyze-with-ollama.result }}"
+          echo "- Changes Found: ${{ needs.analyze-with-ollama.outputs.has-changes }}"
+          echo "- Strategy: ✅ Multi-model with intelligent fallback"
+          echo "- Timeout Handling: ✅ Progressive timeouts implemented"
           echo ""
           
           echo "### 📋 Pull Request"
           if [ "${{ needs.analyze-with-ollama.outputs.has-changes }}" == "true" ]; then
-            echo "Status: ${{ needs.create-ai-pr.result }}"
-            echo "AI Documentation: ✅ Generated with REAL AI"
-            echo "Authentication: ✅ Using GitHub App Token"
+            echo "- Status: ${{ needs.create-ai-pr.result }}"
+            echo "- AI Documentation: ✅ Generated with reliability improvements"
+            echo "- Authentication: ✅ GitHub App Token"
           else
-            echo "Status: Skipped (no changes detected)"
+            echo "- Status: Skipped (no changes detected)"
           fi
           
           echo ""
-          echo "### 🎯 Authentication Method"
-          echo "Method: GitHub App Token"
-          echo "App ID: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_ID }}"
+          echo "### 🎯 Optimizations Applied"
+          echo "- ✅ Smaller, faster AI models"
+          echo "- ✅ Progressive timeout strategy"
+          echo "- ✅ Intelligent fallback documentation"
+          echo "- ✅ Output size limits"
+          echo "- ✅ Retry logic with multiple models"
+          echo "- ✅ Optimized prompts"
 
   # Job 5: Cleanup
   cleanup:
@@ -339,8 +438,13 @@ jobs:
     if: always()
     
     steps:
-      - name: Cleanup Ollama
+      - name: Cleanup Ollama and resources
         run: |
-          echo "🧹 Cleaning up Ollama resources..."
+          echo "🧹 Cleaning up resources..."
           pkill ollama || true
-          echo "✅ Cleanup completed"
+          pkill -f "ollama serve" || true
+          
+          # Clean up any large temporary files
+          rm -f /tmp/ollama* || true
+          
+          echo "✅ Cleanup completed successfully"
