@@ -11,62 +11,10 @@ permissions:
   actions: read
 
 jobs:
-  # Job 1: Setup Ollama with optimizations
-  setup-ollama:
-    name: 🚀 Setup Ollama Environment
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Generate GitHub App Token
-        id: app-token
-        uses: tibdex/github-app-token@v2
-        with:
-          app_id: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_ID }}
-          private_key: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_PRIVATE_KEY }}
-          installation_retrieval_mode: repository
-          installation_retrieval_payload: ${{ github.repository }}
-
-      - name: Install Ollama
-        run: |
-          echo "📦 Installing Ollama..."
-          curl -fsSL https://ollama.ai/install.sh | sh
-          
-          # Start Ollama service in background
-          ollama serve &
-          sleep 5
-          echo "✅ Ollama service started"
-
-      - name: Download optimized model (Llama 3.2 3B or Phi-3)
-        run: |
-          echo "🔽 Downloading optimized model..."
-          # Use smaller, faster model for CI/CD
-          ollama pull llama3.2:3b || ollama pull phi3:mini || ollama pull llama3:8b
-          echo "✅ Model downloaded successfully"
-
-      - name: Verify Ollama installation
-        run: |
-          echo "🔍 Verifying Ollama..."
-          ollama list
-          echo "✅ Ollama verification complete"
-
-      - name: Configure Git with App Token
-        run: |
-          git config user.name "fqmasterbot[app]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
-
-  # Job 2: Análisis con Ollama optimizado
+  # Job 1: Análisis completo con Ollama (setup + análisis en un solo job)
   analyze-with-ollama:
-    name: 🔍 Real AI Analysis with Ollama
+    name: 🔍 Complete AI Analysis with Ollama
     runs-on: ubuntu-latest
-    needs: setup-ollama
     timeout-minutes: 20
     outputs:
       has-changes: ${{ steps.detect-changes.outputs.changes }}
@@ -95,18 +43,25 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
-      - name: Setup Ollama for analysis
+      - name: Setup Ollama Environment (Complete)
         run: |
-          echo "🚀 Setting up Ollama for analysis..."
+          echo "🚀 Setting up complete Ollama environment..."
           curl -fsSL https://ollama.ai/install.sh | sh
+          
+          # Start Ollama service in background
           ollama serve &
           sleep 10
           
-          # Download smaller, faster model
+          # Download optimized models with fallback chain
+          echo "🔽 Downloading AI models..."
           ollama pull llama3.2:3b || ollama pull phi3:mini || {
             echo "⚠️ Failed to download optimized model, using fallback"
             ollama pull llama3:8b
           }
+          
+          echo "🔍 Verifying installation..."
+          ollama list
+          echo "✅ Ollama environment ready for analysis"
 
       - name: Update submodules and detect changes
         id: detect-changes
@@ -304,7 +259,7 @@ jobs:
             submodule_before.txt
             submodule_after.txt
 
-  # Job 3: Crear Pull Request con análisis AI
+  # Job 2: Crear Pull Request con análisis AI
   create-ai-pr:
     name: 📋 Create AI-Powered Pull Request
     runs-on: ubuntu-latest
@@ -385,31 +340,25 @@ jobs:
           reviewers: remr11
           assignees: remr11
 
-  # Job 4: Enhanced status report
+  # Job 3: Enhanced status report
   report-status:
     name: 📊 AI Analysis Report
     runs-on: ubuntu-latest
-    needs: [setup-ollama, analyze-with-ollama, create-ai-pr]
+    needs: [analyze-with-ollama, create-ai-pr]
     if: always()
     
     steps:
       - name: Generate comprehensive status report
         run: |
-          echo "## 🤖 Optimized AI Analysis Report"
+          echo "## 🤖 Streamlined AI Analysis Report"
           echo "**Run #${{ github.run_number }}** - $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
           echo ""
           
-          echo "### 🚀 Ollama Setup"
-          echo "- Status: ${{ needs.setup-ollama.result }}"
-          echo "- Models: llama3.2:3b, phi3:mini, llama3:8b (fallback chain)"
-          echo "- Optimization: ✅ Fast models prioritized"
-          echo ""
-          
-          echo "### 🔍 AI Analysis" 
+          echo "### 🔍 Complete AI Analysis" 
           echo "- Status: ${{ needs.analyze-with-ollama.result }}"
           echo "- Changes Found: ${{ needs.analyze-with-ollama.outputs.has-changes }}"
-          echo "- Strategy: ✅ Multi-model with intelligent fallback"
-          echo "- Timeout Handling: ✅ Progressive timeouts implemented"
+          echo "- Strategy: ✅ Single-job setup + analysis (optimized)"
+          echo "- Models: llama3.2:3b → phi3:mini → llama3:8b (fallback chain)"
           echo ""
           
           echo "### 📋 Pull Request"
