@@ -22,86 +22,20 @@ jobs:
       submodules-data: ${{ steps.generate-json.outputs.submodules-data }}
     
     steps:
-      - name: Generate GitHub App Token
-        id: app-token
-        uses: tibdex/github-app-token@v2
-        with:
-          app_id: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_ID }}
-          private_key: ${{ secrets.BOOK_MASTER_NET_GITHUB_APP_PRIVATE_KEY }}
-          installation_retrieval_mode: repository
-          installation_retrieval_payload: ${{ github.repository }}
-
-      - name: Checkout with submodules
-        uses: actions/checkout@v4
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Configure Git identity
-        run: |
-          git config user.name "fqmasterbot[app]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --global url."https://${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
-
-      - name: Update submodules and detect changes
-        id: detect-changes
-        run: |
-          echo "🔄 Updating submodules..."
-          
-          # Capturar estado antes
-          git submodule status > submodule_before.txt
-          
-          # Actualizar submódulos
-          git submodule update --remote --merge --progress
-          
-          # Detectar cambios
-          if [[ -n "$(git status --porcelain)" ]]; then
-            echo "changes=true" >> $GITHUB_OUTPUT
-            
-            # Crear estructura de datos para MCP
-            echo "{" > submodules_data.json
-            echo "  \"submodules\": [" >> submodules_data.json
-            
-            first=true
-            for submodule in $(git submodule status | awk '{print $2}'); do
-              if [ "$first" = false ]; then
-                echo "," >> submodules_data.json
-              fi
-              
-              cd "$submodule"
-              old_commit=$(git rev-parse HEAD@{1} 2>/dev/null || echo "")
-              new_commit=$(git rev-parse HEAD)
-              cd ..
-              
-              echo "    {" >> submodules_data.json
-              echo "      \"path\": \"$submodule\"," >> submodules_data.json
-              echo "      \"old_commit\": \"$old_commit\"," >> submodules_data.json
-              echo "      \"new_commit\": \"$new_commit\"" >> submodules_data.json
-              echo "    }" >> submodules_data.json
-              
-              first=false
-            done
-            
-            echo "  ]" >> submodules_data.json
-            echo "}" >> submodules_data.json
-            
-          else
-            echo "changes=false" >> $GITHUB_OUTPUT
-          fi
-          
-      - name: Install Python dependencies
-        if: steps.detect-changes.outputs.changes == 'true'
-        run: |
-          echo "📦 Installing required Python packages..."
-          pip install requests
-          
+      # ... [tus steps anteriores] ...
+      
       - name: Setup Python for MCP
         if: steps.detect-changes.outputs.changes == 'true'
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-
+  
+      - name: Install Python dependencies
+        if: steps.detect-changes.outputs.changes == 'true'
+        run: |
+          echo "📦 Installing required Python packages..."
+          pip install requests
+  
       - name: Run MCP analysis
         id: run-mcp-analysis
         if: steps.detect-changes.outputs.changes == 'true'
@@ -118,24 +52,6 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
           
           echo "✅ MCP analysis completed!"
-
-      - name: Generate JSON output
-        if: steps.detect-changes.outputs.changes == 'true'
-        id: generate-json
-        run: |
-          content=$(cat submodules_data.json)
-          echo "submodules-data<<EOF" >> $GITHUB_OUTPUT
-          echo "$content" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Upload analysis artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: mcp-analysis-artifacts
-          path: |
-            submodules_data.json
-            mcp_analysis.json
-            submodule_before.txt
 
   # Job 2: Análisis Ollama opcional (solo para cambios de alto riesgo)
   optional-ollama-analysis:
