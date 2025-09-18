@@ -89,7 +89,13 @@ jobs:
           else
             echo "changes=false" >> $GITHUB_OUTPUT
           fi
-
+          
+      - name: Install Python dependencies
+        if: steps.detect-changes.outputs.changes == 'true'
+        run: |
+          echo "📦 Installing required Python packages..."
+          pip install requests
+          
       - name: Setup Python for MCP
         if: steps.detect-changes.outputs.changes == 'true'
         uses: actions/setup-python@v4
